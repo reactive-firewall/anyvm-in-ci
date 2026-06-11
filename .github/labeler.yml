@@ -1,0 +1,56 @@
+# .github/labler.yml
+---
+# Add 'Lint' label to any lint file changes
+linters:
+  - changed-files:
+    - any-glob-to-any-file:
+      - .yamllint.conf
+      - .flake8.ini
+      - .deepsource.toml
+      - .github/workflows/yaml-lint.yml
+      - .github/workflows/codeql-analysis.yml
+
+# Add 'Lang' label to any python file changes
+shellscripts:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/*.sh'
+      - '*.sh'
+      - '**/*.bash'
+      - '*.bash'
+
+configs:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '*.yml'
+      - './**/*.yml'
+      - './.**/*.yml'
+      - '*.ini'
+      - '*.toml'
+      - '*.cfg'
+      - '*.conf'
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '*.md'
+      - './**/*.md'
+      - docs/**/*
+      - docs/*
+
+CI:
+  - changed-files:
+    - any-glob-to-any-file:
+      - .travis.yml
+      - .appveyor.yml
+      - .github/workflows/*
+      - .circleci/*
+      - action.yml
+
+GitHub:
+  - changed-files:
+    - any-glob-to-any-file:
+      - .github/**/*
+      - .github/*
+      - README.md
+      - action.yml
