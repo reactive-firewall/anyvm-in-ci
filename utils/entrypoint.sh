@@ -8,7 +8,7 @@ RELEASE="${INPUT_RELEASE:-}"
 ARCH="${INPUT_ARCH:-}"
 MEM="${INPUT_MEM:-6144}"
 CPU="${INPUT_CPU:-}"
-ANYVM_TAG="${INPUT_ANYVM_TAG:-v0.0.0}"    # pin this
+ANYVM_VERSION="${ANYVM_VERSION:-0.0.0}"    # pin this
 CACHE_DIR="${INPUT_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/anyvm-cache}"
 DATA_DIR="${INPUT_DATA_DIR:-$CACHE_DIR/data}"
 VM_USER_CREATE="${INPUT_CREATE_USER:-true}"    # create non-root user by default
@@ -127,7 +127,10 @@ export IMAGE_PATH
 printf '%s\n' "Image downloaded to $IMAGE_PATH"
 
 # 5. start VM with VNC disabled
-START_ARGS=(--image "$IMAGE_PATH" --mem "$MEM" --cpu "$CPU" --background --pidfile "$DATA_DIR/anyvm.pid")
+START_ARGS=(--image "$IMAGE_PATH" --mem "$MEM" --background --pidfile "$DATA_DIR/anyvm.pid")
+if [ -n "$CPU" ]; then
+  START_ARGS+=(--cpu "$CPU")
+fi
 if [ "$VNC_DISABLE" = "true" ]; then
   START_ARGS+=(--no-vnc)
 fi
@@ -142,7 +145,7 @@ VM_SSH_PORT="${VM_SSH_PORT:-2222}"
 wait_for_ssh(){ local h=$1 p=$2 t=${3:-180}; local s; s=$(date +%s); if command -v nc >/dev/null 2>&1; then
   while ! nc -z "$h" "$p"; do sleep 1; if [ $(( $(date +%s)-s )) -gt "$t" ]; then return 1; fi; done
 else
-  while ! ssh -o BatchMode=yes -o ConnectTimeout=3 -p "$p" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null 127.0.0.1 true 2>/dev/null; do
+  while ! ssh -o BatchMode=yes -o ConnectTimeout=3 -p "$p" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$h" true 2>/dev/null; do
     sleep 1
     if [ $(( $(date +%s)-s )) -gt "$t" ]; then return 1; fi
   done
@@ -242,7 +245,7 @@ fi
 # verify ephemeral works (try a few times)
 SSH_EPHEMERAL_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $EPHEM_KEY -o ConnectTimeout=5"
 ok=1
-for i in 1 2 3; do
+for _ in 1 2 3; do
   if ssh $SSH_EPHEMERAL_OPTS -o BatchMode=yes root@"$VM_SSH_HOST" "echo OK" >/dev/null 2>&1; then ok=0; break; fi
   sleep 1
 done
@@ -334,7 +337,8 @@ ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHo
 if [ "$SYNC_METHOD" = "rsync" ]; then
   rsync -a --delete -e "ssh -p $VM_SSH_PORT -i ${RSYNC_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" "$GITHUB_WS/" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
 else
-  scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$GITHUB_WS" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS"
+  # Use trailing slash and /* glob to copy contents, not the directory itself
+  scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" "$GITHUB_WS"/* "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
 fi
 
 # 9. run startup hook if exists
@@ -374,5 +378,7 @@ else
   rm -f "${EPHEM_KEY}"
   [ -n "${USER_KEY:-}" ] && rm -f "${USER_KEY}"
 fi
-rm -rf "$EPHEM_DIR" "${USER_EPHEM_DIR:-/dev/null}" "$ROTATE_ROOT_SCRIPT_PATH" "$CREATE_USER_SCRIPT_PATH" || true
+rm -rf "$EPHEM_DIR" "$ROTATE_ROOT_SCRIPT_PATH" || true
+[ -n "${USER_EPHEM_DIR:-}" ] && rm -rf "$USER_EPHEM_DIR" || true
+[ -n "${CREATE_USER_SCRIPT_PATH:-}" ] && rm -f "$CREATE_USER_SCRIPT_PATH" || true
 echo "done"
