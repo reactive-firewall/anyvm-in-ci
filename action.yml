@@ -1,0 +1,107 @@
+name: "Any VM in CI"
+description: "Run CI steps inside an anyvm VM (FreeBSD, OpenBSD, etc.)"
+branding:
+  icon: 'link'
+  color: 'red'
+
+inputs:
+  osname:
+    description: "The VM's OS name to use for looking up anyvm images"
+    required: true
+    default: "FreeBSD"
+  
+  prepare:
+    description: "Pre-run block to set up the VM before run (shell commands)"
+    required: false
+  
+  run:
+    description: "The CI command(s) to run inside the VM"
+    required: false
+  
+  afterwards:
+    description: "Post-run cleanup block (shell commands)"
+    required: false
+  
+  release:
+    description: "The OS release/version of the VM image"
+    required: false
+  
+  arch:
+    description: "The CPU architecture of the VM (e.g., x86_64, arm64)"
+    required: false
+  
+  envs:
+    description: "Environment variables to pass into VM (newline-separated KEY=VALUE pairs)"
+    required: false
+  
+  mem:
+    description: "Memory size of the VM in MB"
+    required: false
+    default: "6144"
+  
+  cpu:
+    description: "Number of CPU cores for the VM"
+    required: false
+  
+  nat:
+    description: "NAT port forwarding rules for the VM"
+    required: false
+  
+  usesh:
+    description: "Use sh instead of the default shell in the VM"
+    required: false
+  
+  sync:
+    description: "Strategy for synchronizing source code to/from the VM"
+    required: false
+  
+  copyback:
+    description: "Copy build artifacts back from VM to host"
+    required: false
+  
+  debug:
+    description: "Enable debug output during execution"
+    required: false
+  
+  data-dir:
+    description: "Directory to store VM data and images"
+    required: false
+  
+  cache-dir:
+    description: "Directory to store anyvm cache"
+    required: false
+  
+  sync-time:
+    description: "Synchronize the VM time with NTP (true/false)"
+    required: false
+    default: "false"
+  
+  disable-cache:
+    description: "Disable caching for packages and VM images (true/false)"
+    required: false
+    default: "false"
+  
+  custom-shell-name:
+    description: "Custom shell name for VM shell wrapper script"
+    required: false
+  
+  token:
+    description: |
+      GitHub token used to authenticate when fetching VM images from
+      https://github.com/anyvm-org/*-builder repositories.
+      When running on github.com, defaults to github.token.
+      When running on GHES, provide a personal access token if needed.
+    required: true
+    default: ${{ github.server_url == 'https://github.com' && github.token || '' }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Validate inputs and run anyvm"
+      shell: bash
+      env:
+        # Mask the token from logs by passing through environment variable
+        ANYVM_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        "${{ github.action_path }}/utils/entrypoint.sh"
