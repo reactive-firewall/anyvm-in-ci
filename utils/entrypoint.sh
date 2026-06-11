@@ -260,7 +260,6 @@ if [ "$VM_USER_CREATE" = "true" ]; then
   USER_KEY="$USER_EPHEM_DIR/id_user_ci_rsa"
   ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -C "gha-user-ephemeral-$(date -u +%s)-ttl${GITHUB_TIMEOUT}s"
   USER_PUB="$(cat ${USER_KEY}.pub)"
-
   CREATE_USER_SCRIPT_PATH="$DATA_DIR/create_user_$$.sh"
   cat > "$CREATE_USER_SCRIPT_PATH" <<'CRUSER'
 #!/usr/bin/env bash
