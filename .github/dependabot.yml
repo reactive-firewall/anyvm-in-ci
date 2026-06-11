@@ -11,7 +11,7 @@ updates:
     rebase-strategy: "target-branch"
     # Labels on pull requests for version updates only
     labels:
-      - "Configs"
+      - "configs"
       - "duplicate"
       - "GitHub"
       - "CI"
