@@ -1,0 +1,89 @@
+# .github/labler.yml
+---
+# Add 'Lint' label to any lint file changes
+linters:
+  - changed-files:
+    - any-glob-to-any-file:
+      - .yamllint.conf
+      - .flake8.ini
+      - .deepsource.toml
+      - .github/workflows/yaml-lint.yml
+      - .github/workflows/codeql-analysis.yml
+
+# Add 'shellscripts' label to any shell script file changes
+shellscripts:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/*.sh'
+      - '*.sh'
+      - '**/*.bash'
+      - '*.bash'
+      - '**/*.dash'
+      - '*.dash'
+
+# Add 'configs' label to any configuration file changes
+configs:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '*.yml'
+      - '**/*.yml'
+      - './.**/*.yml'
+      - '*.ini'
+      - '**/*.ini'
+      - '*.toml'
+      - '**/*.toml'
+      - '*.cfg'
+      - '**/*.cfg'
+      - '*.conf'
+      - '**/*.conf'
+
+# Add 'documentation' label to any documentation file changes
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '*.md'
+      - '**/*.md'
+      - docs/**/*
+      - docs/*
+      - CITATION.cff
+
+# Add 'CI' label to any Continuous Integration file changes
+CI:
+  - changed-files:
+    - any-glob-to-any-file:
+      - .travis.yml
+      - .appveyor.yml
+      - .github/actions/**/*
+      - .github/workflows/*
+      - .circleci/*
+      - action.yml
+
+# Add 'GitHub' label to any meta-file changes
+GitHub:
+  - changed-files:
+    - any-glob-to-any-file:
+      - .github/actions/**/*
+      - .github/CODESPACES/**/*
+      - .github/codespaces/**/*
+      - .github/**/*
+      - .github/*
+      - .devcontainer/**/*
+      - .devcontainer/devcontainer.json
+      - README.md
+      - README
+      - COPYING.md
+      - COPYING
+      - CODEOWNERS
+      - CONTRIBUTING.md
+      - CONTRIBUTING
+      - CODE_OF_CONDUCT.md
+      - CODE_OF_CONDUCT
+      - LICENSE.md
+      - LICENSE
+      - SECURITY.md
+      - SECURITY
+      - SUPPORT.md
+      - SUPPORT
+      - FUNDING.yml
+      - CITATION.cff
+      - action.yml

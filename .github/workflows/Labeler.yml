@@ -1,0 +1,26 @@
+# .github/workflows/Labeler.yml
+---
+name: "Pull Request Labeler"
+on:  # yamllint disable-line rule:truthy
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+    branches: ["main", "master", "stable"]
+
+# Declare default permissions as none.
+permissions: {}
+# Seealso declared per-job permissions:
+# - read-only permissions for contents and action runs.
+# - read-write permissions for PRs (e.g., to update PR labels).
+
+jobs:
+  triage:
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/labeler@f27b608878404679385c85cfa523b85ccb86e213 # v6.1.0
+      with:
+        repo-token: ${{ github.server_url == 'https://github.com' && github.token || '' }}
+        sync-labels: true  # also remove labels automatically
