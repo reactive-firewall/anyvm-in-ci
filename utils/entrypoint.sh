@@ -4,35 +4,48 @@ IFS=$'\n\t'
 
 # Inputs
 OSNAME="${INPUT_OSNAME:-FreeBSD}"
-RELEASE="${INPUT_RELEASE:-}"
-ARCH="${INPUT_ARCH:-}"
-MEM="${INPUT_MEM:-6144}"
-CPU="${INPUT_CPU:-}"
+ANYVM_RELEASE="${INPUT_RELEASE:-}"
+ANYVM_ARCH="${INPUT_ARCH:-}"
+ANYVM_MEM="${INPUT_MEM:-6144}"
+ANYVM_CPU="${INPUT_CPU:-}"
 ANYVM_VERSION="${ANYVM_VERSION:-0.0.0}"    # pin this
-CACHE_DIR="${INPUT_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/anyvm-cache}"
-DATA_DIR="${INPUT_DATA_DIR:-$CACHE_DIR/data}"
+ANYVM_CACHE_DIR="${INPUT_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/anyvm-cache}"
+DATA_DIR="${INPUT_DATA_DIR:-$ANYVM_CACHE_DIR/data}"
 VM_USER_CREATE="${INPUT_CREATE_USER:-true}"    # create non-root user by default
 HOST_USER="${INPUT_HOST_USER:-${RUNNER_USER:-$(whoami)}}"
-GITHUB_TIMEOUT="${INPUT_TIMEOUT:-${JOB_TIMEOUT:-3600}}"  # seconds; JOB_TIMEOUT can be set by workflow
-VNC_DISABLE="${INPUT_VNC_DISABLE:-true}"
+GITHUB_TIMEOUT="${INPUT_TIMEOUT:-${JOB_TIMEOUT:-360}}"  # seconds; JOB_TIMEOUT can be set by workflow
+ANYVM_USE_VNC="${INPUT_ANYVM_USE_VNC:-false}"
 SYNC_METHOD="${INPUT_SYNC:-scp}"
 COPYBACK="${INPUT_COPYBACK:-true}"
 ENV_INPUTS="${INPUT_ENVS:-}"
 EPHEM_KEY_TYPE="rsa"
 EPHEM_KEY_BITS=3072
 
-mkdir -p "$CACHE_DIR" "$DATA_DIR"
+mkdir -p "$ANYVM_CACHE_DIR" "$DATA_DIR"
+
+# helper: fail with message
+debug_log(){ if $DEBUG; then printf '::debug:: %s\n' "$*" >&2; fi; }
 
 # helper: fail with message
 die(){ printf '::error:: %s\n' "ERROR: $*" >&2; exit 1; }
 
+# helper: is the string a match or not (usage: if matches str1 str2; then ... ; else .... ; fi)
+matches(){
+  case "$1" in
+    ${2}) return 0 ;;     # llvm-ar friendly format
+    *) false ;;
+  esac
+}
+
 # 0. minimal required tools
-required=(python3 git ssh scp ssh-keygen rsync date mktemp chmod mkdir sed awk)
+required=(python3 git ssh scp ssh-keygen date mktemp chmod mkdir sed awk)
 for cmd in "${required[@]}"; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     die "required command not found: $cmd"
   fi
 done
+
+# optional tools: rsync brew apt-get yum choco
 
 # 1. Install QEMU (minimal cross-platform approach)
 install_qemu(){
@@ -49,10 +62,11 @@ install_qemu(){
       fi
       ;;
     Darwin)
-      if ! command -v brew >/dev/null 2>&1; then
+      if command -v brew >/dev/null 2>&1; then
+        brew install qemu ;
+      else
         die "Homebrew required on macOS to install qemu"
       fi
-      brew install qemu
       ;;
     MINGW*|MSYS*|CYGWIN*)
       if command -v choco >/dev/null 2>&1; then
@@ -79,19 +93,19 @@ download_file(){
 }
 
 # Download anyvm.py (kept)
-ANYVM_PY_PATH="$CACHE_DIR/anyvm.py"
+ANYVM_PY_PATH="$ANYVM_CACHE_DIR/anyvm.py"
 ANYVM_URL="https://raw.githubusercontent.com/anyvm-org/anyvm/v${ANYVM_VERSION}/anyvm.py"
 download_file "$ANYVM_URL" "$ANYVM_PY_PATH" || die "failed to download anyvm.py"
 chmod +x "$ANYVM_PY_PATH" || true
 ANYVM_BIN="$ANYVM_PY_PATH"
 
-mkdir -p "$CACHE_DIR/bin" "$DATA_DIR/images"
+mkdir -p "$ANYVM_CACHE_DIR/bin" "$DATA_DIR/images"
 
-RELEASE_TAG="v${ANYVM_VERSION}"
+ANYVM_RELEASE_TAG="v${ANYVM_VERSION}"
 RB_OWNER="anyvm-org"
 RB_REPO="${OSNAME}-builder"
-BASE_URL="https://github.com/${RB_OWNER}/${RB_REPO}/releases/download/${RELEASE_TAG}"
-BASE_NAME="${OSNAME}-${RELEASE}-${ARCH}"
+BASE_URL="https://github.com/${RB_OWNER}/${RB_REPO}/releases/download/${ANYVM_RELEASE_TAG}"
+BASE_NAME="${OSNAME}-${ANYVM_RELEASE}-${ANYVM_ARCH}"
 
 # 3. Try image extensions (preferred order)
 IMAGE_PATH=""
@@ -127,11 +141,11 @@ export IMAGE_PATH
 printf '%s\n' "Image downloaded to $IMAGE_PATH"
 
 # 5. start VM with VNC disabled
-START_ARGS=(--image "$IMAGE_PATH" --mem "$MEM" --background --pidfile "$DATA_DIR/anyvm.pid")
-if [ -n "$CPU" ]; then
-  START_ARGS+=(--cpu "$CPU")
+START_ARGS=(--image "$IMAGE_PATH" --mem "$ANYVM_MEM" --background --pidfile "$DATA_DIR/anyvm.pid")
+if [ -n "$ANYVM_CPU" ]; then
+  START_ARGS+=(--cpu "$ANYVM_CPU")
 fi
-if [ "$VNC_DISABLE" = "true" ]; then
+if [ "$ANYVM_USE_VNC" = "true" ]; then
   START_ARGS+=(--no-vnc)
 fi
 python3 "$ANYVM_BIN" start "${START_ARGS[@]}"
@@ -156,7 +170,7 @@ wait_for_ssh "$VM_SSH_HOST" "$VM_SSH_PORT" 180 || die "SSH did not become availa
 # 6. RSA-3072 ephemeral key generation with expiry comment
 EPHEM_DIR="$(mktemp -d)"
 EPHEM_KEY="$EPHEM_DIR/id_ci_vm_rsa"
-ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -C "gha-ephemeral-$(date -u +%s)-ttl${GITHUB_TIMEOUT}s"
+ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -C "gha-ephemeral-$(date -u +%s)-ttl${GITHUB_TIMEOUT}m"
 
 # compute expiry timestamp (store in comment or file if needed)
 EXP_TS=$(( $(date +%s) + "$GITHUB_TIMEOUT" ))
@@ -337,7 +351,7 @@ if [ "$SYNC_METHOD" = "rsync" ]; then
   rsync -a --delete -e "ssh -p $VM_SSH_PORT -i ${RSYNC_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" "$GITHUB_WS/" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
 else
   # Use trailing slash and /* glob to copy contents, not the directory itself
-  scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" "$GITHUB_WS"/* "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
+  scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$GITHUB_WS"/* "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
 fi
 
 # 9. run startup hook if exists
