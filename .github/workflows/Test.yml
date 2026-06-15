@@ -1,0 +1,58 @@
+---
+name: Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '*'
+    paths:
+      - '.github/workflows/Test.yml'
+
+concurrency: 
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}  # Setting default permissions to none for enhanced security
+
+jobs:
+  test-vm-lifecycle:
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    runs-on: macos-26-intel
+    steps:
+      - name: Build in VM (QEMU)
+        id: build_vm
+        if: ${{ !cancelled() && (github.repository == 'reactive-firewall/anyvm-in-ci') }}
+        uses: reactive-firewall/anyvm-in-ci@feature-implement-entrypoint-draft-1 # WIP
+        with:
+          osname: freebsd
+          arch: x86_64
+          release: 15.0
+          #name: ${{ env.VM_NAME }}
+          mem: 8192                # request 8GB RAM for the guest
+          sync: scp                # try using scp for sync (localhost scp)
+          sync-time: true
+          usesh: true
+          prepare: |
+            set -eux
+            # set -e -u -x: fail fast, treat unset vars as error, show commands
+            printf "%s\n" "Pre-CI: start $(date -u)"
+            uname -a 2>&1 || true
+            freebsd-version 2>&1 || true
+            # Example package operations; keep permission/rate limits in mind
+            if command -v pkg >/dev/null 2>&1; then
+              pkg update -f 2>&1 || true
+              pkg install -y llvm22 2>&1 || true
+            fi
+            # Ensure scripts are executable
+            # chmod +x ./run-ci.sh
+            printf "%s\n" "Pre-CI: end $(date -u)"
+          run: |
+            set -eu
+            # set -e -u: fail fast, treat unset vars as error
+            printf "%s\n" "CI: start $(date -u)"
+            printf "%s\n" "Test of Boot worked"
+            printf "%s\n" "CI: end $(date -u)"

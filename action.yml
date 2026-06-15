@@ -9,7 +9,8 @@ inputs:
     description: "The VM's OS name to use for looking up anyvm images"
     required: true
     default: "FreeBSD"
-  
+    # freebsd / ghostbsd / openbsd / netbsd / dragonflybsd / midnightbsd / solaris / omnios / openindiana / tribblix / haiku / ubuntu / blissos
+
   prepare:
     description: "Pre-run block to set up the VM before run (shell commands)"
     required: false
@@ -50,7 +51,8 @@ inputs:
   usesh:
     description: "Use sh instead of the default shell in the VM"
     required: false
-  
+    default: true
+
   sync:
     description: "Strategy for synchronizing source code to/from the VM"
     required: false
@@ -98,10 +100,20 @@ runs:
   using: "composite"
   steps:
     - name: "Validate inputs and run anyvm"
+      id: anyvm-entrypoint
       shell: bash
       env:
         # Mask the token from logs by passing through environment variable
         ANYVM_TOKEN: ${{ inputs.token }}
+        ANYVM_ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        "${{ github.action_path }}/utils/entrypoint.sh"
+        if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ] ; then
+          "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ;
+        fi ;
+    - name: "Cleanup any remaining VMs (EXPERIMENTAL)"
+      id: anyvm-post-cleanup
+      shell: bash
+      if: ${{ always() }}
+      run: |
+        "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ;
