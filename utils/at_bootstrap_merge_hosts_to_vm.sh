@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euo
+
+# bridge-hosts.sh
 
 # 6e. Merge host /etc/hosts into guest's /etc/hosts (best-effort, safer merge)
 # - preserves guest's essential localhost and virtualization entries
@@ -46,7 +48,7 @@ fi
 
 # remote merge script: run on guest (idempotent-ish)
 _remote_run bash -s <<'REMOTE_EOF' || true
-set -euo pipefail
+set -euo
 
 HOSTS_FROM_HOST=/tmp/hosts.from_host
 GUEST_HOSTS=/etc/hosts

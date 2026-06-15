@@ -1,5 +1,5 @@
 #!/bin/sh
-# stop-qemu-vm-safe.sh  -- Hardened, minimal-output stopper for detached/hung qemu VMs
+# vm-reaper.sh  -- Hardened, minimal-output stopper for detached/hung qemu VMs
 # Usage examples:
 #  sudo DRY_RUN=1 ./stop-qemu-vm-safe.sh --pid 1234
 #  sudo ./stop-qemu-vm-safe.sh --name qemu-system-x86_64

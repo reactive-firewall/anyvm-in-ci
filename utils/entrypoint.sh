@@ -74,7 +74,7 @@ if [ -d "$ANYVM_UTIL_PATH_ARG" ] && [ ":$PATH:" != *":$ANYVM_UTIL_PATH_ARG:"* ] 
 fi
 
 unset input_path ;
-set -euo pipefail
+set -euo
 IFS=$'\n\t'
 
 # Inputs
@@ -191,7 +191,7 @@ RB_OWNER="anyvm-org"
 RB_REPO="${ANYVM_OSNAME}-builder"
 BASE_URL="https://github.com/${RB_OWNER}/${RB_REPO}/releases/download/${ANYVM_RELEASE_TAG}"
 if [ -n "$ANYVM_ARCH" ]; then
-  case "${ANYVM_ARCH}" in:
+  case "${ANYVM_ARCH}" in
     x86_64)
       ;;
     *)
@@ -319,7 +319,7 @@ EPHEM_PUB_CONTENT="$(cat ${EPHEM_KEY}.pub)"
 ROTATE_ROOT_SCRIPT_PATH="$DATA_DIR/rotate_root_$$.sh"
 cat > "$ROTATE_ROOT_SCRIPT_PATH" <<'ROTSCR'
 #!/usr/bin/env bash
-set -euo pipefail
+set -euo
 NEW_PUB="$1"
 # write to temp and atomically move for each homedir
 for homedir in /root /home/*; do
@@ -389,7 +389,7 @@ if [ "$VM_USER_CREATE" = "true" ]; then
   CREATE_USER_SCRIPT_PATH="$DATA_DIR/create_user_$$.sh"
   cat > "$CREATE_USER_SCRIPT_PATH" <<'CRUSER'
 #!/usr/bin/env bash
-set -euo pipefail
+set -euo
 USERNAME="$1"
 USER_PUB="$2"
 # create user: try useradd/useradd-alternate/adduser/pw

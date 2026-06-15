@@ -8,85 +8,68 @@ inputs:
   osname:
     description: "The VM's OS name to use for looking up anyvm images"
     required: true
-    default: "FreeBSD"
+    default: "freebsd"
     # freebsd / ghostbsd / openbsd / netbsd / dragonflybsd / midnightbsd / solaris / omnios / openindiana / tribblix / haiku / ubuntu / blissos
-
   prepare:
     description: "Pre-run block to set up the VM before run (shell commands)"
     required: false
-  
   run:
     description: "The CI command(s) to run inside the VM"
     required: false
-  
   afterwards:
     description: "Post-run cleanup block (shell commands)"
     required: false
-  
   release:
     description: "The OS release/version of the VM image"
     required: false
-  
   arch:
     description: "The CPU architecture of the VM (e.g., x86_64, arm64)"
     required: false
-  
+    default: x86_64
   envs:
     description: "Environment variables to pass into VM (newline-separated KEY=VALUE pairs)"
     required: false
-  
   mem:
     description: "Memory size of the VM in MB"
     required: false
     default: 6144
-  
   cpu:
     description: "Number of CPU cores for the VM"
     required: false
-  
   nat:
     description: "NAT port forwarding rules for the VM"
     required: false
-  
   usesh:
     description: "Use sh instead of the default shell in the VM"
     required: false
     default: true
-
   sync:
     description: "Strategy for synchronizing source code to/from the VM"
     required: false
-  
   copyback:
     description: "Copy build artifacts back from VM to host"
     required: false
-  
   debug:
     description: "Enable debug output during execution"
     required: false
-  
   data-dir:
     description: "Directory to store VM data and images"
     required: false
-  
   cache-dir:
     description: "Directory to store anyvm cache"
     required: false
-  
   sync-time:
     description: "Synchronize the VM time with NTP (true/false)"
     required: false
     default: "false"
-  
   disable-cache:
     description: "Disable caching for packages and VM images (true/false)"
     required: false
     default: "false"
-  
   custom-shell-name:
     description: "Custom shell name for VM shell wrapper script"
     required: false
-  
+    default: "vmsh"
   token:
     description: |
       GitHub token used to authenticate when fetching VM images from
@@ -125,7 +108,7 @@ runs:
         ANYVM_ACTION_PATH: ${{ github.action_path }}
         INPUT_CPU: ${{ inputs.cpu || steps.detect_cpus.outputs.cpus }}
       run: |
-        set -euo pipefail
+        set -euo
         if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ] ; then
           "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ;
         fi ;
