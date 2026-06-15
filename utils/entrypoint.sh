@@ -84,7 +84,8 @@ ANYVM_ARCH="${INPUT_ARCH:-}"  # x86_64 / aarch64 / riscv64 / s390x / powerpc64 /
 ANYVM_MEM="${INPUT_MEM:-6144}"
 ANYVM_CPU="${INPUT_CPU:-}"
 ANYVM_CPU_ARCH="${INPUT_CPU_ARCH:-}"  # optional VM specific CPU model
-ANYVM_VERSION="${ANYVM_VERSION:-0.0.0}"    # pin this
+ANYVM_VERSION="${ANYVM_VERSION:-2.1.7}"    # pin this per OS builder
+ANYVM_SHA="7d20a921892ad49d4338dc4d9b641b496658cb78"  # v0.4.3
 ANYVM_CACHE_DIR="${INPUT_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/anyvm-cache}"
 DATA_DIR="${INPUT_DATA_DIR:-$ANYVM_CACHE_DIR/data}"
 VM_USER_CREATE="${INPUT_CREATE_USER:-true}"    # create non-root user by default
@@ -115,7 +116,7 @@ matches(){
 }
 
 # 0. minimal required tools
-required=(python3 git ssh scp ssh-keygen date mktemp chmod mkdir sed awk)
+required=(python3 curl git ssh scp ssh-keygen date mktemp chmod mkdir sed awk)
 for cmd in "${required[@]}"; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     die "required command not found: $cmd"
@@ -166,8 +167,8 @@ install_qemu
 # 2. fetch anyvm from github and use its anyvm.py
 download_file(){
   url=$1 dest=$2 tmp="${dest}.tmp.$$"
-  mkdir -p "$(dirname "$dest")"
-  if ! curl -L --fail --silent --show-error --output "$tmp" --write-out "%{http_code}" "$url" >"$tmp.httpcode"; then
+  mkdir -p "$(dirname "$dest")" || true
+  if ! curl -L --fail --silent --show-error --output "$tmp" --write-out "%{http_code}" --url "$url" >"$tmp.httpcode"; then
     rm -f "$tmp" "$tmp.httpcode"; return 1
   fi
   code="$(cat "$tmp.httpcode" 2>/dev/null || echo "")"; rm -f "$tmp.httpcode"
@@ -175,14 +176,14 @@ download_file(){
   mv "$tmp" "$dest"; return 0
 }
 
+mkdir -p "$ANYVM_CACHE_DIR" "$DATA_DIR/images"
+
 # Download anyvm.py (kept)
 ANYVM_PY_PATH="$ANYVM_CACHE_DIR/anyvm.py"
-ANYVM_URL="https://raw.githubusercontent.com/anyvm-org/anyvm/v${ANYVM_VERSION}/anyvm.py"
+ANYVM_URL="https://raw.githubusercontent.com/anyvm-org/anyvm/${ANYVM_SHA}/anyvm.py"
 download_file "$ANYVM_URL" "$ANYVM_PY_PATH" || die "failed to download anyvm.py"
 chmod +x "$ANYVM_PY_PATH" || true
 ANYVM_BIN="$ANYVM_PY_PATH"
-
-mkdir -p "$ANYVM_CACHE_DIR" "$DATA_DIR/images"
 
 ANYVM_RELEASE_TAG="v${ANYVM_VERSION}"
 RB_OWNER="anyvm-org"
