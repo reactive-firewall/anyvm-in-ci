@@ -191,7 +191,13 @@ RB_OWNER="anyvm-org"
 RB_REPO="${ANYVM_OSNAME}-builder"
 BASE_URL="https://github.com/${RB_OWNER}/${RB_REPO}/releases/download/${ANYVM_RELEASE_TAG}"
 if [ -n "$ANYVM_ARCH" ]; then
-  ANYVM_NAME_SUFFIX="-${ANYVM_ARCH}")
+  case "${ANYVM_ARCH}" in:
+    x86_64)
+      ;;
+    *)
+      ANYVM_NAME_SUFFIX="-${ANYVM_ARCH}"
+      ;;
+  esac
 fi
 ANYVM_NAME="${ANYVM_OSNAME}-${ANYVM_RELEASE}${ANYVM_NAME_SUFFIX}"
 
