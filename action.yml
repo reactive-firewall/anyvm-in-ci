@@ -99,6 +99,62 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Detect CPU count
+      id: detect_cpus
+      shell: bash
+      run: |
+        case "$(uname -s 2>/dev/null || echo Windows)" in
+          Linux|Darwin)
+            cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || printf "%i\n" 1)
+            ;;
+          Windows*|MINGW*|MSYS*|CYGWIN*)
+            cpus=$(echo %NUMBER_OF_PROCESSORS% 2>/dev/null || (wmic cpu get NumberOfLogicalProcessors 2>/dev/null | awk 'NR==2{print $1}') || echo 1)
+            ;;
+          *)
+            cpus=1
+            ;;
+        esac
+        cpus=${cpus:-1}
+        echo "cpus=$cpus" >> "$GITHUB_OUTPUT"
+    - name: Detect available memory
+      id: detect_memory
+      shell: bash
+      run: |
+        case "$(uname -s 2>/dev/null || echo Windows)" in
+          Linux)
+            # total available memory in KB (MemAvailable if present, else MemTotal)
+            kb=$(awk '/MemAvailable/ {print $2; exit} /MemTotal/ {t=$2} END{if(!kb) print t}' /proc/meminfo)
+            bytes=$((kb * 1024))
+            ;;
+          Darwin)
+            # free + inactive + speculative approximated via vm_stat
+            pagesize=$(sysctl -n hw.pagesize)
+            free_pages=$(vm_stat | awk '/Pages free|Pages inactive|Pages speculative/ {gsub(/[^0-9]/,"",$3); s+= $3} END{print s}')
+            bytes=$((pagesize * (free_pages == "" ? 0 : free_pages)))
+            # fallback to physical memory if calculation fails
+            [ "$bytes" -le 0 ] && bytes=$(sysctl -n hw.memsize)
+            ;;
+          Windows*|MINGW*|MSYS*|CYGWIN*)
+            # use PowerShell to get available physical memory in bytes
+            bytes=$(powershell -NoProfile -NonInteractive -Command "[int64](Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory * 1024")
+            ;;
+          *)
+            bytes=0
+            ;;
+        esac
+
+        # fallback to at least 1GB if detection failed or zero
+        bytes=${bytes:-0}
+        [ "$bytes" -le 0 ] && bytes=$((1 * 1024 * 1024 * 1024))
+
+        # compute 80%, convert to MB, round to nearest multiple of 512 MB
+        mb=$(( (bytes + 1024*1024 - 1) / (1024*1024) ))           # bytes -> ceil MB
+        target_mb=$(( (mb * 80 + 50) / 100 ))                   # 80% (rounded)
+        # round to nearest 512 MB
+        rounded=$(( ((target_mb + 256) / 512) * 512 ))
+
+        echo "available_memory_bytes=$bytes" >> "$GITHUB_OUTPUT"
+        echo "memory=${rounded}MB" >> "$GITHUB_OUTPUT"
     - name: "Validate inputs and run anyvm"
       id: anyvm-entrypoint
       shell: bash
@@ -106,6 +162,8 @@ runs:
         # Mask the token from logs by passing through environment variable
         ANYVM_TOKEN: ${{ inputs.token }}
         ANYVM_ACTION_PATH: ${{ github.action_path }}
+        INPUT_CPU: ${{ inputs.cpu || steps.detect_cpus.outputs.cpus }}
+        INPUT_MEM: ${{ inputs.mem || steps.detect_memory.outputs.memory }}
       run: |
         set -euo pipefail
         if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ] ; then

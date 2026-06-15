@@ -185,11 +185,15 @@ download_file "$ANYVM_URL" "$ANYVM_PY_PATH" || die "failed to download anyvm.py"
 chmod +x "$ANYVM_PY_PATH" || true
 ANYVM_BIN="$ANYVM_PY_PATH"
 
+ANYVM_NAME_SUFFIX=""
 ANYVM_RELEASE_TAG="v${ANYVM_VERSION}"
 RB_OWNER="anyvm-org"
 RB_REPO="${ANYVM_OSNAME}-builder"
 BASE_URL="https://github.com/${RB_OWNER}/${RB_REPO}/releases/download/${ANYVM_RELEASE_TAG}"
-ANYVM_NAME="${ANYVM_OSNAME}-${ANYVM_RELEASE}-${ANYVM_ARCH}"
+if [ -n "$ANYVM_ARCH" ]; then
+  ANYVM_NAME_SUFFIX="-${ANYVM_ARCH}")
+fi
+ANYVM_NAME="${ANYVM_OSNAME}-${ANYVM_RELEASE}${ANYVM_NAME_SUFFIX}"
 
 # 3. Try image extensions (preferred order)
 IMAGE_PATH=""
@@ -206,8 +210,8 @@ done
 BAKED_PUB="$DATA_DIR/${ANYVM_NAME}.pub"
 BAKED_PRIV="$DATA_DIR/${ANYVM_NAME}"
 
-PUB_URL="${BASE_URL}/${ANYVM_NAME}.pub"
-PRIV_URL="${BASE_URL}/${ANYVM_NAME}.id_rsa"
+PUB_URL="${BASE_URL}/${ANYVM_NAME}-id_rsa.pub"
+PRIV_URL="${BASE_URL}/${ANYVM_NAME}-host.id_rsa"
 
 if ! download_file "$PUB_URL" "$BAKED_PUB"; then
   printf '%s\n' "warning: failed to download baked pubkey from $PUB_URL"; rm -f "$BAKED_PUB"
