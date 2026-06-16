@@ -102,7 +102,7 @@ EPHEM_KEY_BITS=3072
 mkdir -p "$ANYVM_CACHE_DIR" "$DATA_DIR"
 
 # helper: fail with message
-debug_log(){ if $DEBUG; then printf '::debug:: %s\n' "$*" >&2; fi; }
+debug_log(){ if [ ${DEBUG} ]; then printf '::debug:: %s\n' "$*" >&2; fi; }
 
 # helper: fail with message
 die(){ printf "::error file='%s',title='ERROR':: %s\n" "${0}" "$*" >&2; exit 1; }
