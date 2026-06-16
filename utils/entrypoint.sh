@@ -62,26 +62,29 @@
 ################################################################################
 
 # Get the input path of this script as called
-input_path="$0"
+MY_OWN_PATH="$0"
 # Remove the trailing slash if present
-input_path="${input_path%/}"
+MY_OWN_PATH="${MY_OWN_PATH%/}"
 # Extract the directory name
-ANYVM_UTIL_PATH_ARG="${input_path%/*}"
+ANYVM_UTIL_PATH_ARG="${MY_OWN_PATH%/*}"
 
 if [ -d "$ANYVM_UTIL_PATH_ARG" ] && [ ":$PATH:" != *":$ANYVM_UTIL_PATH_ARG:"* ] ; then
 	PATH="${PATH:+"$PATH:"}$ANYVM_UTIL_PATH_ARG" ;
 	export PATH ;
 fi
 
-unset input_path ;
+unset MY_OWN_PATH ;
 set -eu
+
+# load functions
+. "${ANYVM_UTIL_PATH_ARG:-.}/latest-vm-release.sh" ;
 
 # Inputs
 DEBUG=$( [ "${ACTIONS_RUNNER_DEBUG:-}" ] || [ "${ACTIONS_STEP_DEBUG:-}" ] || [ "${INPUT_DEBUG:-}" ] && printf 1 || printf 0 )
 ANYVM_OSNAME="${INPUT_OSNAME:-freebsd}"  # freebsd / ghostbsd / openbsd / netbsd / dragonflybsd / midnightbsd / solaris / omnios / openindiana / tribblix / haiku / ubuntu / blissos
-ANYVM_RELEASE="${INPUT_RELEASE:-}"
+ANYVM_RELEASE="${INPUT_RELEASE:-$(get_latest_vm_release $ANYVM_OSNAME)}"
 ANYVM_ARCH="${INPUT_ARCH:-}"  # x86_64 / aarch64 / riscv64 / s390x / powerpc64 / ppc64le / sparc64
-ANYVM_MEM="${INPUT_MEM:-6144}"
+ANYVM_MEM="${INPUT_MEM:-6144}"  # e.g., default to ((6*1024)*(1024*1024))/(1024*1024) MiB
 ANYVM_CPU="${INPUT_CPU:-1}"
 ANYVM_CPU_ARCH="${INPUT_CPU_ARCH:-}"  # optional VM specific CPU model
 ANYVM_VERSION="${ANYVM_VERSION:-2.1.7}"    # pin this per OS builder
