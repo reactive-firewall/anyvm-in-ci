@@ -116,5 +116,12 @@ runs:
       id: anyvm-post-cleanup
       shell: bash
       if: ${{ always() }}
+      env:
+        ANYVM_ACTION_PATH: ${{ github.action_path }}
       run: |
-        "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ;
+        if ${{ runner.debug }}; then printf "::debug:: %s\n" "Looking for '${ANYVM_ACTION_PATH}'" ; fi ;
+        if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ] ; then
+          sudo "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ;
+        else
+          "utils/stop-qemu-vm-safe.sh" || exit 1 ;
+        fi ;
