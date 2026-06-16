@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo
+set -eu
 
 # bridge-hosts.sh
 
@@ -48,7 +48,7 @@ fi
 
 # remote merge script: run on guest (idempotent-ish)
 _remote_run bash -s <<'REMOTE_EOF' || true
-set -euo
+set -eu
 
 HOSTS_FROM_HOST=/tmp/hosts.from_host
 GUEST_HOSTS=/etc/hosts

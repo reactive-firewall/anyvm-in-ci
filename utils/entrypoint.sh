@@ -74,15 +74,15 @@ if [ -d "$ANYVM_UTIL_PATH_ARG" ] && [ ":$PATH:" != *":$ANYVM_UTIL_PATH_ARG:"* ] 
 fi
 
 unset input_path ;
-set -euo
-IFS=$'\n\t'
+set -eu
 
 # Inputs
+DEBUG=$( [ "${ACTIONS_RUNNER_DEBUG:-}" ] || [ "${ACTIONS_STEP_DEBUG:-}" ] || [ "${INPUT_DEBUG:-}" ] && printf 1 || printf 0 )
 ANYVM_OSNAME="${INPUT_OSNAME:-freebsd}"  # freebsd / ghostbsd / openbsd / netbsd / dragonflybsd / midnightbsd / solaris / omnios / openindiana / tribblix / haiku / ubuntu / blissos
 ANYVM_RELEASE="${INPUT_RELEASE:-}"
 ANYVM_ARCH="${INPUT_ARCH:-}"  # x86_64 / aarch64 / riscv64 / s390x / powerpc64 / ppc64le / sparc64
 ANYVM_MEM="${INPUT_MEM:-6144}"
-ANYVM_CPU="${INPUT_CPU:-}"
+ANYVM_CPU="${INPUT_CPU:-1}"
 ANYVM_CPU_ARCH="${INPUT_CPU_ARCH:-}"  # optional VM specific CPU model
 ANYVM_VERSION="${ANYVM_VERSION:-2.1.7}"    # pin this per OS builder
 ANYVM_SHA="7d20a921892ad49d4338dc4d9b641b496658cb78"  # v0.4.3
@@ -163,6 +163,8 @@ install_qemu(){
   esac
 }
 install_qemu
+
+debug_log "qemu installed"
 
 # 2. fetch anyvm from github and use its anyvm.py
 download_file(){
@@ -319,7 +321,7 @@ EPHEM_PUB_CONTENT="$(cat ${EPHEM_KEY}.pub)"
 ROTATE_ROOT_SCRIPT_PATH="$DATA_DIR/rotate_root_$$.sh"
 cat > "$ROTATE_ROOT_SCRIPT_PATH" <<'ROTSCR'
 #!/usr/bin/env bash
-set -euo
+set -eu
 NEW_PUB="$1"
 # write to temp and atomically move for each homedir
 for homedir in /root /home/*; do
@@ -389,7 +391,7 @@ if [ "$VM_USER_CREATE" = "true" ]; then
   CREATE_USER_SCRIPT_PATH="$DATA_DIR/create_user_$$.sh"
   cat > "$CREATE_USER_SCRIPT_PATH" <<'CRUSER'
 #!/usr/bin/env bash
-set -euo
+set -eu
 USERNAME="$1"
 USER_PUB="$2"
 # create user: try useradd/useradd-alternate/adduser/pw

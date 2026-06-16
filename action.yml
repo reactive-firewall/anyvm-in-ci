@@ -108,7 +108,7 @@ runs:
         ANYVM_ACTION_PATH: ${{ github.action_path }}
         INPUT_CPU: ${{ inputs.cpu || steps.detect_cpus.outputs.cpus }}
       run: |
-        set -euo
+        set -eu
         if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ] ; then
           "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ;
         fi ;
