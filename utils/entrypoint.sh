@@ -380,9 +380,9 @@ fi
 
 # 6e. copy host /etc/hosts to guest (temp file) - best-effort
 SSH_BOOT_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $EPHEM_KEY"
-if [ -x "${ANYVM_UTIL_PATH_ARG}/at_bootstrap_merge_hosts_to_vm.sh" ]; then
+if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh" ]; then
   EPHEM_KEY="$EPHEM_KEY" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
-    "${ANYVM_UTIL_PATH_ARG}/at_bootstrap_merge_hosts_to_vm.sh"
+    "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh"
 else
   # best-effort fallback
   scp $SSH_BOOT_OPTS /etc/hosts root@"$VM_SSH_HOST":/tmp/hosts.guest || true
