@@ -30,10 +30,10 @@ jobs:
         uses: reactive-firewall/anyvm-in-ci@master # WIP
         with:
           osname: freebsd
-          arch: x86_64
-          release: '15.0'
+          # arch: x86_64
+          release: '15.1'
           #name: ${{ env.VM_NAME }}
-          mem: 8192                # request 8GB RAM for the guest
+          mem: 3072                # request 8GB RAM for the guest
           sync: scp                # try using scp for sync (localhost scp)
           sync-time: true
           usesh: true

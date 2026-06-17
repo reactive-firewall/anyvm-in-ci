@@ -1,0 +1,44 @@
+---
+name: "Normalize default arch"
+description: "Emits guest_arch output mapped from inputs.arch or detected runner.arch"
+inputs:
+  arch:
+    description: "Optional explicit guest arch. If empty, runner.arch is detected and mapped."
+    required: false
+    default: ""
+outputs:
+  guest_arch:
+    description: "Mapped guest architecture (x86_64, aarch64, etc.)"
+    value: ${{ steps.detect.outputs.guest_arch != '' && steps.detect.outputs.guest_arch || inputs.arch }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Detect guest arch
+      id: detect
+      if: ${{ inputs.arch == '' }}
+      shell: bash
+      env:
+        RUNNER_ARCH: ${{ runner.arch }}
+        RUNNER_DEBUG: ${{ runner.debug }}
+      run: |
+        set -euo pipefail
+        # Map documented GitHub runner.arch values to canonical guest_arch
+        case "${RUNNER_ARCH:-}" in
+          x86|X86|x64|X64)
+            chosen="x86_64"
+            ;;
+          ARM64|arm64|ARM|arm)
+            chosen="aarch64"
+            ;;
+          *)
+            printf "::error::Unsupported or unknown runner.arch: %s\n" "${RUNNER_ARCH:-<unset>}"
+            exit 2
+            ;;
+        esac
+        # Emit debug logs only when runner.debug is true
+        if [ "${RUNNER_DEBUG:-false}" = "true" ]; then
+          printf "::debug::Detected runner.arch=%s\n" "${RUNNER_ARCH:-<unset>}"
+          printf "::debug::Mapped guest_arch=%s\n" "$chosen"
+        fi
+        printf "guest_arch=%s\n" "$chosen" >> "$GITHUB_OUTPUT"

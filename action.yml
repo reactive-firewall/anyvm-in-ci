@@ -8,8 +8,23 @@ inputs:
   osname:
     description: "The VM's OS name to use for looking up anyvm images"
     required: true
-    default: "freebsd"
-    # freebsd / ghostbsd / openbsd / netbsd / dragonflybsd / midnightbsd / solaris / omnios / openindiana / tribblix / haiku / ubuntu / blissos
+    default: 'freebsd'
+    type: choice
+    options:
+     - freebsd
+     - ghostbsd
+     - openbsd
+     - netbsd
+     - dragonflybsd
+     - midnightbsd
+     - solaris
+     - omnios
+     - openindiana
+     - openindiana
+     - tribblix
+     - haiku
+     - ubuntu
+     - blissos
   prepare:
     description: "Pre-run block to set up the VM before run (shell commands)"
     required: false
@@ -21,37 +36,73 @@ inputs:
     required: false
   release:
     description: "The OS release/version of the VM image"
+    type: string
     required: false
   arch:
     description: "The CPU architecture of the VM (e.g., x86_64, arm64)"
+    type: choice
+    options:
+      - x86_64
+      - aarch64 # arm64
+      - riscv64
+      - s390x  # experimental
+      - powerpc64
+      - ppc64le  # experimental
+      - sparc64  # experimental
     required: false
-    default: x86_64
+    default: null
   envs:
     description: "Environment variables to pass into VM (newline-separated KEY=VALUE pairs)"
+    type: string
     required: false
   mem:
     description: "Memory size of the VM in MB"
-    required: false
+    # see https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories
+    type: number
+    options:
+     - 1024
+     - 2048
+     - 3072
+     - 4096  # limit of ubuntu-slim hosts
+     - 6144  # limit of macOS-{26,latest} hosts
+     - 8192
+     - 10240  # 10 GiB
+     - 12288  # 12 GiB
+     - 14336  # limit of macOS-*-intel hosts
+     - 16384  # limit of ubuntu-2* hosts
+     - 24576  # TODO: requires enabling 10 GB of host swap or detect large/custom runner
+     - 32768  # TODO: requires enabling 30 GB of host swap or detect large/custom runner
+     - 49152  # TODO: requires enabling 32 GB of host swap or detect large/custom runner
+     - 65536  # TODO: requires enabling 64 GB of host swap or detect large/custom runner
+     - 98304  # TODO: requires enabling 96 GB of host swap or detect large/custom runner
+     - 131072  # TODO: requires enabling 128 GB of host swap AND detect large runner
+    required: true
     default: 6144
   cpu:
     description: "Number of CPU cores for the VM"
+    type: number
     required: false
   nat:
     description: "NAT port forwarding rules for the VM"
     required: false
   usesh:
     description: "Use sh instead of the default shell in the VM"
+    type: boolean
     required: false
     default: true
   sync:
     description: "Strategy for synchronizing source code to/from the VM"
     required: false
+    type: choice
+    options:
+      - rsync
+      - scp
+    default: scp
   copyback:
     description: "Copy build artifacts back from VM to host"
+    type: boolean
     required: false
-  debug:
-    description: "Enable debug output during execution"
-    required: false
+    default: true
   data-dir:
     description: "Directory to store VM data and images"
     required: false
@@ -60,12 +111,14 @@ inputs:
     required: false
   sync-time:
     description: "Synchronize the VM time with NTP (true/false)"
+    type: boolean
     required: false
-    default: "false"
+    default: false
   disable-cache:
     description: "Disable caching for packages and VM images (true/false)"
+    type: boolean
     required: false
-    default: "false"
+    default: false
   custom-shell-name:
     description: "Custom shell name for VM shell wrapper script"
     required: false
@@ -82,6 +135,11 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Detect Host arch
+      id: guest-arch
+      uses: ./.github/actions/detect-default-guest-arch
+      with:
+        arch: ${{ inputs.arch || '' }}
     - name: Detect CPU count
       id: detect_cpus
       shell: bash
@@ -122,9 +180,12 @@ runs:
         INPUT_CPU: ${{ inputs.cpu || steps.detect_cpus.outputs.cpus }}
         INPUT_SYNC: ${{ inputs.sync || 'scp' }}
         INPUT_COPYBACK: ${{ inputs.copyback }}
-        INPUT_DEBUG: ${{ inputs.debug || runner.debug }}
+        INPUT_DEBUG: ${{ runner.debug }}
         INPUT_DATA_DIR: ${{ inputs.data-dir }}  # should set a reasonable default for caching logic
         INPUT_CACHE_DIR: ${{ inputs.cache-dir }}  # TODO: should set secure default
+        INPUT_SYNC_TIME: ${{ inputs.sync-time }}
+        INPUT_DISABLE_CACHE: ${{ inputs.disable-cache }}
+        INPUT_CUSTOM_SHELL_NAME: ${{ inputs.custom-shell-name || 'vmsh' }}
       run: |
         set -eu
         if [ -n "$ANYVM_ACTION_PATH" ]; then
