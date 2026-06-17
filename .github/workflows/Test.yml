@@ -5,13 +5,10 @@ on:
   push:
     branches:
       - '*'
-   push:
-     branches:
-       - '*'
-     paths:
-       - 'action.yml'
-       - 'utils/*.sh'
-       - '.github/workflows/Test.yml'
+    paths:
+      - 'action.yml'
+      - 'utils/*.sh'
+      - '.github/workflows/Test.yml'
   workflow_dispatch:
 
 

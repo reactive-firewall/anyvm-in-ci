@@ -26,7 +26,7 @@ set -eu
 if [ -f "${EPHEM_KEY:-}" ]; then
   true ;
 else
-  printf '::warning:: %s\n' "/etc/hosts not found locally; nothing to merge." >&2
+  printf '::warning:: %s\n' "EPHEM_KEY not set or file not found; skipping hosts merge." >&2
   exit 0
 fi
 
@@ -170,7 +170,7 @@ else
 fi
 
 # 7) Clean up
-rm -f "$HOSTS_FROM_HOST" "$TMP_NEW" || true
+rm -f "$HOSTS_FROM_HOST" "$TMP_NEW" "${TMP_NEW}.dedup" || true
 
 REMOTE_EOF
 

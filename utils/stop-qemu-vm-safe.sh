@@ -42,9 +42,8 @@ while [ $# -gt 0 ]; do
     --monitor) require_value "$1" "${2:-}"; MONITOR="$2"; shift 2;;
     --help) printf "Usage: %s [--pid PID] [--name PROC_NAME] [--monitor /path]\n" "$0"; exit 0;;
     *) log "Unknown arg"; exit 2;;
-     *) log "Unknown arg"; exit 2;;
-   esac
- done
+  esac
+done
 
 # Resolve a PID if name provided (avoid printing command lines)
 if [ -z "$PID" ] && [ -n "$PROC_NAME" ]; then

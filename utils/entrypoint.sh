@@ -68,9 +68,11 @@ MY_OWN_PATH="${MY_OWN_PATH%/}"
 # Extract the directory name
 ANYVM_UTIL_PATH_ARG="${MY_OWN_PATH%/*}"
 
-if [ -d "$ANYVM_UTIL_PATH_ARG" ] && [ ":$PATH:" != *":$ANYVM_UTIL_PATH_ARG:"* ] ; then
-	PATH="${PATH:+"$PATH:"}$ANYVM_UTIL_PATH_ARG" ;
-	export PATH ;
+if [ -d "$ANYVM_UTIL_PATH_ARG" ]; then
+  case ":$PATH:" in
+    *":$ANYVM_UTIL_PATH_ARG:"*) ;;  # already in PATH
+    *) PATH="${PATH:+"$PATH:"}$ANYVM_UTIL_PATH_ARG"; export PATH ;;
+  esac
 fi
 
 unset MY_OWN_PATH ;
