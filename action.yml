@@ -137,7 +137,7 @@ runs:
   steps:
     - name: Detect Host arch
       id: guest-arch
-      uses: ./.github/actions/detect-default-guest-arch
+      uses: reactive-firewall/anyvm-in-ci/.github/actions/detect-default-guest-arch
       with:
         arch: ${{ inputs.arch || '' }}
     - name: Detect CPU count
