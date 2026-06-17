@@ -35,7 +35,7 @@ VM="${VM_SSH_HOST:-localhost}"
 
 # helper: remote run (non-fatal)
 _remote_run() {
-  ssh $SSH_BOOT_OPTS root@"$VM" -- "$@" || true
+  ssh $SSH_BOOT_OPTS root@"$VM" "$@" || true
 }
 
 # copy host file to guest /tmp/hosts.from_host
@@ -149,7 +149,16 @@ awk '
     }
     if (out != "") print ip, out
   }
-' "$TMP_NEW" > "${TMP_NEW}.dedup" || true
+' "$TMP_NEW" > "${TMP_NEW}.dedup" || {
+  printf '::warning:: %s\n' "Failed to deduplicate merged hosts; leaving $GUEST_HOSTS unchanged. THIS MAY HAVE SECURITY IMPACTS!" >&2
+  rm -f "${TMP_NEW}.dedup" "$TMP_NEW"
+  exit 0
+}
+[ -s "${TMP_NEW}.dedup" ] || {
+  printf '::warning:: %s\n' "Generated hosts file is empty; leaving $GUEST_HOSTS unchanged. THIS MAY HAVE SECURITY IMPACTS!" >&2
+  rm -f "${TMP_NEW}.dedup" "$TMP_NEW"
+  exit 0
+}
 
 # 6) Atomically install new hosts file (fallback to non-atomic if needed)
 if mv "${TMP_NEW}.dedup" "$GUEST_HOSTS".tmp && mv "$GUEST_HOSTS".tmp "$GUEST_HOSTS"; then

@@ -91,13 +91,18 @@ runs:
             cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || printf "%i\n" 1)
             ;;
           Windows*|MINGW*|MSYS*|CYGWIN*)
-            cpus=$(echo %NUMBER_OF_PROCESSORS% 2>/dev/null || (wmic cpu get NumberOfLogicalProcessors 2>/dev/null | awk 'NR==2{print $1}') || echo 1)
+            cpus="${NUMBER_OF_PROCESSORS:-}"
+            if [ -z "$cpus" ] && command -v wmic >/dev/null 2>&1; then
+              cpus=$(wmic cpu get NumberOfLogicalProcessors 2>/dev/null | awk 'NR==2{print $1}' | tr -d '\r')
+            fi
+            cpus=${cpus:-1}
             ;;
           *)
             cpus=1
             ;;
         esac
         cpus=${cpus:-1}
+        case "$cpus" in ''|*[!0-9]*) cpus=1 ;; esac
         echo "cpus=$cpus" >> "$GITHUB_OUTPUT"
     - name: "Validate inputs and run anyvm"
       id: anyvm-entrypoint
@@ -106,11 +111,37 @@ runs:
         # Mask the token from logs by passing through environment variable
         ANYVM_TOKEN: ${{ inputs.token }}
         ANYVM_ACTION_PATH: ${{ github.action_path }}
+        INPUT_OSNAME: ${{ inputs.osname }}  # TODO: should normalize
+        INPUT_PREPARE: ${{ inputs.prepare }}
+        INPUT_RUN: ${{ inputs.run }}
+        INPUT_AFTERWARDS: ${{ inputs.afterwards }}
+        INPUT_RELEASE: ${{ inputs.release }}
+        INPUT_ARCH: ${{ inputs.arch }} # TODO: needs to have fallback to runner.os arch
+        INPUT_ENVS: ${{ inputs.envs }} # TODO: needs to be bridged
+        INPUT_MEM: ${{ inputs.mem }}  # TODO: should also provide host swap on linux when value is above runner shreshold, etc.
         INPUT_CPU: ${{ inputs.cpu || steps.detect_cpus.outputs.cpus }}
+        INPUT_SYNC: ${{ inputs.sync || 'scp' }}
+        INPUT_COPYBACK: ${{ inputs.copyback }}
+        INPUT_DEBUG: ${{ inputs.debug || runner.debug }}
+        INPUT_DATA_DIR: ${{ inputs.data-dir }}  # should set a reasonable default for caching logic
+        INPUT_CACHE_DIR: ${{ inputs.cache-dir }}  # TODO: should set secure default
       run: |
         set -eu
-        if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ] ; then
-          "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ;
+        if [ -n "$ANYVM_ACTION_PATH" ]; then
+          entrypoint="${ANYVM_ACTION_PATH}/utils/entrypoint.sh"
+          if [ -x "${entrypoint}" ] ; then
+            # TODO: handle -e, -f and -r checks with improved diagnostics too
+            "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ;
+            unset entrypoint 2>/dev/null ;
+          else
+            printf "::error title='BUG'::%s\n" "Missing anyvm-in-ci entrypoint (This is a BUG)" ;
+            unset entrypoint 2>/dev/null || true ;
+            exit 1
+          fi ;
+        else
+          printf "::debug::%s\n" "Can't find empty action path." ;
+          printf "::error title='INVALID'::%s\n" "Missing anyvm-in-ci utilities." ;
+          exit 1
         fi ;
     - name: "Cleanup any remaining VMs (EXPERIMENTAL)"
       id: anyvm-post-cleanup
@@ -118,8 +149,9 @@ runs:
       if: ${{ always() }}
       env:
         ANYVM_ACTION_PATH: ${{ github.action_path }}
+        RUNNER_DEBUG: ${{ runner.debug }}
       run: |
-        if ${{ runner.debug }}; then printf "::debug:: %s\n" "Looking for '${ANYVM_ACTION_PATH}'" ; fi ;
+        if [ "${RUNNER_DEBUG:-}" = "1" ]; then printf "::debug:: %s\n" "Looking for '${ANYVM_ACTION_PATH}'" ; fi ;
         if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ] ; then
           sudo "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ;
         else

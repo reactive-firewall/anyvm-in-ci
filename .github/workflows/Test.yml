@@ -5,9 +5,13 @@ on:
   push:
     branches:
       - '*'
-    paths:
-      - 'utils/entrypoint.sh'
-      - '.github/workflows/Test.yml'
+   push:
+     branches:
+       - '*'
+     paths:
+       - 'action.yml'
+       - 'utils/*.sh'
+       - '.github/workflows/Test.yml'
   workflow_dispatch:
 
 
@@ -21,8 +25,6 @@ jobs:
   test-vm-lifecycle:
     permissions:
       contents: read
-      pull-requests: read
-      statuses: write
     runs-on: macos-26-intel
     steps:
       - name: Build in VM (QEMU)

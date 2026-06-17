@@ -31,13 +31,19 @@ obf() {
 PID=""
 PROC_NAME=""
 MONITOR=""
+require_value() {
+  [ -n "${2:-}" ] || { log "Missing value for $1"; exit 2; }
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --pid) PID="$2"; shift 2;;
-    --name) PROC_NAME="$2"; shift 2;;
-    --monitor) MONITOR="$2"; shift 2;;
+    --pid) require_value "$1" "${2:-}"; PID="$2"; shift 2;;
+    --name) require_value "$1" "${2:-}"; PROC_NAME="$2"; shift 2;;
+    --monitor) require_value "$1" "${2:-}"; MONITOR="$2"; shift 2;;
     --help) printf "Usage: %s [--pid PID] [--name PROC_NAME] [--monitor /path]\n" "$0"; exit 0;;
     *) log "Unknown arg"; exit 2;;
+  esac
+done
   esac
 done
 
@@ -46,16 +52,17 @@ if [ -z "$PID" ] && [ -n "$PROC_NAME" ]; then
   if command -v pgrep >/dev/null 2>&1; then
     PID="$(pgrep -f "$PROC_NAME" | head -n1 || true)"
   else
-    PID="$(ps -ef 2>/dev/null | awk '$0 ~ "'"$PROC_NAME"'" {print $2; exit}' || true)"
+    PID="$(ps -ef 2>/dev/null | awk -v pat="$PROC_NAME" '$0 ~ pat {print $2; exit}' || true)"
   fi
 fi
 
+QEMU_PROC_RE='(^|[[:space:]/])(qemu-system-[^[:space:]/]+|qemu-kvm)([[:space:]]|$)'
 # If still none, try common qemu names but do not reveal matches
 if [ -z "$PID" ]; then
   if command -v pgrep >/dev/null 2>&1; then
-    PID="$(pgrep -f 'qemu(-system|-kvm)?' | head -n1 || true)"
+    PID="$(pgrep -f "$QEMU_PROC_RE" | head -n1 || true)"
   else
-    PID="$(ps -ef 2>/dev/null | awk '$0 ~ /qemu(-system|-kvm)?/ {print $2; exit}' || true)"
+    PID="$(ps -ef 2>/dev/null | awk -v pat="$QEMU_PROC_RE" '$0 ~ pat {print $2; exit}' || true)"
   fi
 fi
 

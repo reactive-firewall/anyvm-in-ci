@@ -232,7 +232,7 @@ get_latest_vm_release() {
 
 if [[ $0 == *latest-vm-release.sh ]] ; then
 	while [[ ( ${1} == -* ) ]] ; do shift ; done ; # ignore options
-	{ get_latest_vm_release "${*}" && true ;} || false ;
+	get_latest_vm_release "${1:-}" || exit 1 ;
 	exit 0;
 fi ;  # else import as source
 
