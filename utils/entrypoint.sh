@@ -183,12 +183,15 @@ download_file(){
   mv "$tmp" "$dest"; return 0
 }
 
+debug_log "Ensure cache dirs exsist"
 mkdir -p "$ANYVM_CACHE_DIR" "$DATA_DIR/images"
 
+debug_log "Ensure we have anyvm.py"
 # Download anyvm.py (kept)
 ANYVM_PY_PATH="$ANYVM_CACHE_DIR/anyvm.py"
 ANYVM_URL="https://raw.githubusercontent.com/anyvm-org/anyvm/${ANYVM_SHA}/anyvm.py"
 download_file "$ANYVM_URL" "$ANYVM_PY_PATH" || die "failed to download anyvm.py"
+debug_log "download anyvm.py"
 chmod +x "$ANYVM_PY_PATH" || true
 ANYVM_BIN="$ANYVM_PY_PATH"
 
@@ -197,6 +200,7 @@ ANYVM_RELEASE_TAG="v${ANYVM_VERSION}"
 RB_OWNER="anyvm-org"
 RB_REPO="${ANYVM_OSNAME}-builder"
 BASE_URL="https://github.com/${RB_OWNER}/${RB_REPO}/releases/download/${ANYVM_RELEASE_TAG}"
+debug_log "Selecting Builder ${BASE_URL:-'null'}"
 if [ -n "$ANYVM_ARCH" ]; then
   case "${ANYVM_ARCH}" in
     x86_64)
@@ -207,17 +211,22 @@ if [ -n "$ANYVM_ARCH" ]; then
   esac
 fi
 ANYVM_NAME="${ANYVM_OSNAME}-${ANYVM_RELEASE}${ANYVM_NAME_SUFFIX}"
+debug_log "Requesting target ${ANYVM_NAME:-}"
 
 # 3. Try image extensions (preferred order)
 IMAGE_PATH=""
 for ext in "qcow2.zst" "qemu"; do
   cand="$DATA_DIR/images/${ANYVM_NAME}.${ext}"
   url="${BASE_URL}/${ANYVM_NAME}.${ext}"
+  debug_log "fetching target from ${url}"
   if download_file "$url" "$cand"; then
-    if [ -f "${IMAGE_PATH}" ]; then break; fi ;
-    IMAGE_PATH="$cand"; chmod 644 "$IMAGE_PATH" || true;
-  fi
-done
+    if [ -f "${IMAGE_PATH}" ]; then
+      continue ;
+    else
+      IMAGE_PATH="$cand"; chmod 644 "$IMAGE_PATH" || true;
+    fi ;
+  fi ;
+done ;
 [ -n "$IMAGE_PATH" ] || die "no image found for ${ANYVM_NAME} (.qcow2.zst nor .qemu) in ${DATA_DIR}/images"
 
 # 4. Keys: .pub (public) and .id_rsa (private)
