@@ -254,7 +254,11 @@ fi
 # TODO: dynamically use --qcow2 when cached
 
 # 5. start VM with VNC disabled
-START_ARGS=(--image "$IMAGE_PATH" --mem "$ANYVM_MEM" --detach --builder "$ANYVM_VERSION" --pidfile "$DATA_DIR/anyvm.pid")
+# need way to use pid file eg --pidfile "$DATA_DIR/anyvm.pid"
+START_ARGS=(--os "${ANYVM_OSNAME}" --mem "$ANYVM_MEM" --detach --builder "$ANYVM_VERSION")
+if [ -n "$ANYVM_ARCH" ] ; then
+  START_ARGS+=(--arch "${ANYVM_ARCH}")
+fi
 if [ -n "$ANYVM_RELEASE" ] ; then
   START_ARGS+=(--release "${ANYVM_RELEASE}")
 fi
