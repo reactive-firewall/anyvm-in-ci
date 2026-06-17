@@ -116,13 +116,13 @@ get_latest_vm_release() {
         tail -n2 | head -n1 || return 1  # use penultimate - skip latest Dev branch
       ;;
     ghostbsd)
-      test -x "$(command -v jq)" || exit 126 ;
+      test -x "$(command -v jq)" || return 126 ;
       # GhostBSD releases listed on GitHub releases page
       fetch "https://api.github.com/repos/ghostbsd/ghostbsd/branches" |
         jq -r '.[].name' |
         grep '^stable/' |
         sed 's|^stable/||' |
-        sort -V |
+        ( sort -V 2>/dev/null || sort ) |
         tail -n1 || return 1
       ;;
     openbsd)
@@ -138,14 +138,14 @@ get_latest_vm_release() {
         tr '\n' ' ' |
         grep -oEi 'NetBSD[ _-]?[0-9]+\.[0-9]+|/releases/[0-9]+\.[0-9]+' |
         sed -E 's#.*/releases/([0-9]+\.[0-9]+).*#\1#; s/.*[Nn]et[Bb][Ss][Dd][ _-]?([0-9]+\.[0-9]+).*/\1/' |
-        sort -V | uniq | tail -n1 || return 1
+        ( sort -V 2>/dev/null || sort ) | uniq | tail -n1 || return 1
       ;;
     dragonflybsd|dragonfly)
       # DragonFly release info on homepage
       fetch "https://www.dragonflybsd.org/" |
         grep -oEi 'DragonFly[ _-]?[0-9]+\.[0-9]+|/releases/[0-9]+\.[0-9]+' |
         sed -E 's#.*/releases/([0-9]+\.[0-9]+).*#\1#; s/.*[Dd]ragon[Ff]ly[ _-]?([0-9]+\.[0-9]+).*/\1/' |
-        sort -V | uniq | tail -n1 || return 1
+        ( sort -V 2>/dev/null || sort ) | uniq | tail -n1 || return 1
       ;;
     midnightbsd|midnight)
       # MidnightBSD latest stable on homepage or releases
@@ -204,12 +204,13 @@ get_latest_vm_release() {
 #        tr '\n' ' ' |
 #        grep -oEi 'tribblix[-_ ]?[0-9]+(\.[0-9]+)*|/releases/[0-9]+(\.[0-9]+)*' |
 #        sed -E 's#.*/releases/([0-9.]+).*#\1#; s/.*tribblix[-_ ]?([0-9.]+).*/\1/' |
-#        sort -V | uniq | tail -n1 || return 1
+#        ( sort -V 2>/dev/null || sort ) | uniq | tail -n1 || return 1
       ;;
     haiku)
       # Haiku releases use version like "r1beta1" — attempt to get latest tag via GitHub API
+      test -x "$(command -v jq)" || return 126 ;
       fetch "https://api.github.com/repos/haiku/haiku/branches" | jq -r '.[].name' |
-        grep '^r.*' | sort -V | tail -n1 || return 1
+        grep '^r.*' | ( sort -V 2>/dev/null || sort ) | tail -n1 || return 1
       ;;
     ubuntu)
       # Ubuntu publishes current LTS and interim names on releases.ubuntu.com

@@ -142,10 +142,10 @@ install_qemu(){
           qemu-system-x86 qemu-system-arm qemu-efi-aarch64 \
           qemu-efi-riscv64 qemu-system-riscv64 qemu-system-misc u-boot-qemu \
           qemu-system-ppc qemu-system-s390x qemu-system-sparc \
-          openssh-client || true
+          openssh-client || die "failed to install qemu via apt-get"
       elif command -v yum >/dev/null 2>&1; then
         printf '%s\n' "Unsupported runner OS"
-        sudo yum install -y qemu-kvm qemu-img || true
+        sudo yum install -y qemu-kvm qemu-img || die "failed to install qemu via yum"
       fi
       ;;
     Darwin)
@@ -157,7 +157,7 @@ install_qemu(){
       ;;
     MINGW*|MSYS*|CYGWIN*)
       if command -v choco >/dev/null 2>&1; then
-        choco install qemu -y || true
+        choco install qemu -y || die "failed to install qemu via choco"
       fi
       ;;
     *)
@@ -212,6 +212,7 @@ for ext in "qcow2.zst" "qemu"; do
   cand="$DATA_DIR/images/${ANYVM_NAME}.${ext}"
   url="${BASE_URL}/${ANYVM_NAME}.${ext}"
   if download_file "$url" "$cand"; then
+    if [ -f "${IMAGE_PATH}" ]; then break; fi ;
     IMAGE_PATH="$cand"; chmod 644 "$IMAGE_PATH" || true;
   fi
 done
@@ -357,8 +358,9 @@ chmod +x "$ROTATE_ROOT_SCRIPT_PATH"
 
 # 6d. copy rotation script and run it using baked key (best-effort)
 if [ -f "$BAKED_PRIV" ]; then
-  scp -P "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$BAKED_PRIV" "$ROTATE_ROOT_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/rotate_root.sh || die "failed to scp rotate_root script"
-  ssh $SSH_BOOT_OPTS root@"$VM_SSH_HOST" "bash /tmp/rotate_root.sh '$(printf "%s" "$EPHEM_PUB_CONTENT" | sed "s/'/'\\\\''/g")'" || echo "warning: rotate_root execution failed"
+  SSH_BAKED_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $BAKED_PRIV"
+  scp $SSH_BAKED_OPTS "$ROTATE_ROOT_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/rotate_root.sh || die "failed to scp rotate_root script"
+  ssh $SSH_BAKED_OPTS root@"$VM_SSH_HOST" "bash /tmp/rotate_root.sh '$(printf "%s" "$EPHEM_PUB_CONTENT" | sed "s/'/'\\\\''/g")'" || echo "warning: rotate_root execution failed"
 else
   die "warning: baked private key not available; cannot run remote rotation via baked key"
 fi
@@ -376,8 +378,9 @@ fi
 
 # 6e. copy host /etc/hosts to guest (temp file) - best-effort
 SSH_BOOT_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $EPHEM_KEY"
-if [ -x ${ANYVM_UTIL_PATH_ARG}/at_bootstrap_merge_hosts_to_vm.sh ]; then
-  "${ANYVM_UTIL_PATH_ARG}/at_bootstrap_merge_hosts_to_vm.sh" ;
+if [ -x "${ANYVM_UTIL_PATH_ARG}/at_bootstrap_merge_hosts_to_vm.sh" ]; then
+  EPHEM_KEY="$EPHEM_KEY" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
+    "${ANYVM_UTIL_PATH_ARG}/at_bootstrap_merge_hosts_to_vm.sh"
 else
   # best-effort fallback
   scp $SSH_BOOT_OPTS /etc/hosts root@"$VM_SSH_HOST":/tmp/hosts.guest || true
@@ -434,7 +437,7 @@ CRUSER
   WRAPPER="$DATA_DIR/ssh-to-vm.sh"
   cat > "$WRAPPER" <<EOF
 #!/usr/bin/env bash
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $USER_KEY "\$@"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $USER_KEY "${GUEST_USER}@${VM_SSH_HOST}" "\$@"
 EOF
   chmod +x "$WRAPPER"
 else
@@ -442,7 +445,7 @@ else
   WRAPPER="$DATA_DIR/ssh-to-vm.sh"
   cat > "$WRAPPER" <<EOF
 #!/usr/bin/env bash
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $EPHEM_KEY "\$@"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $EPHEM_KEY "root@${VM_SSH_HOST}" "\$@"
 EOF
   chmod +x "$WRAPPER"
 fi
@@ -462,7 +465,7 @@ GUEST_RSYNC_USER="${GUEST_USER:-root}"
 RSYNC_KEY="${USER_KEY:-$EPHEM_KEY}"
 
 # ensure destination exists and owned by guest user if present
-ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "mkdir -p '$DEST_WS' && chown -R ${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER} '$DEST_WS' || true" || true
+ssh ${SSH_BOOT_OPTS} root@${VM_SSH_HOST} "mkdir -p '$DEST_WS' && chown -R '${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER}' '$DEST_WS'" || true
 
 if [ "$SYNC_METHOD" = "rsync" ]; then
   rsync -a --delete -e "ssh -p $VM_SSH_PORT -i ${RSYNC_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" "$GITHUB_WS/" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
