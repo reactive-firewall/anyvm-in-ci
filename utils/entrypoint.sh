@@ -96,7 +96,7 @@ HOST_USER="${INPUT_HOST_USER:-${RUNNER_USER:-$(whoami)}}"
 GITHUB_TIMEOUT="${INPUT_TIMEOUT:-${JOB_TIMEOUT:-360}}"  # minutes; JOB_TIMEOUT can be set by workflow
 ANYVM_USE_VNC="${INPUT_ANYVM_USE_VNC:-false}"
 ANYVM_USE_IPV6="${INPUT_USE_IPV6:-false}" # adds --enable-ipv6
-SYNC_METHOD="${INPUT_SYNC:-scp}"
+SYNC_METHOD="${INPUT_SYNC:-tar}"
 COPYBACK="${INPUT_COPYBACK:-true}"
 ENV_INPUTS="${INPUT_ENVS:-}"
 EPHEM_KEY_TYPE="rsa"
@@ -455,24 +455,50 @@ elif [ -f "$BAKED_PRIV" ]; then
   scp $SSH_BOOT_OPTS "$ENV_SCRIPT_LOCAL" root@"$VM_SSH_HOST":/etc/profile.d/gha_env_forward.sh || true
 fi
 
-# 8. recreate full GITHUB_WORKSPACE path and rsync content
+# 8. sync workspace to VM
 GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
 DEST_WS="$GITHUB_WS"
 GUEST_RSYNC_USER="${GUEST_USER:-root}"
 RSYNC_KEY="${USER_KEY:-$EPHEM_KEY}"
 
-# ensure destination exists and owned by guest user if present
-ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "mkdir -p '$DEST_WS' && chown -R ${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER} '$DEST_WS' || true" || true
-
 if [ "$SYNC_METHOD" = "rsync" ]; then
+  # ensure destination exists and is owned by guest user
+  ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "mkdir -p '$DEST_WS' && chown -R ${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER} '$DEST_WS' || true" || true
   rsync -a --delete -e "ssh -p $VM_SSH_PORT -i ${RSYNC_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" "$GITHUB_WS/" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
 else
-  # Use trailing slash and /* glob to copy contents, not the directory itself
-  scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$GITHUB_WS"/* "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
+  # tar strategy: pack workspace locally, scp tarball, untar into staging dir, atomic move into place
+  WS_TAR="$(mktemp "${TMPDIR:-/tmp}/ws_sync_XXXXXX.tar.gz")"
+  tar -czf "$WS_TAR" -C "$GITHUB_WS" .
+  REMOTE_TAR="/tmp/ws_sync_$$.tar.gz"
+  scp -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    "$WS_TAR" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:${REMOTE_TAR}"
+  rm -f "$WS_TAR"
+  # on the VM: extract into a staging dir, then atomically move into place
+  ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "
+set -eu
+DEST='${DEST_WS}'
+REMOTE_TAR='${REMOTE_TAR}'
+STAGE=\"\${DEST%/}.sync.$$\"
+mkdir -p \"\$STAGE\"
+tar -xzf \"\$REMOTE_TAR\" -C \"\$STAGE\"
+# atomic move into place (rename within same filesystem)
+if [ -d \"\$DEST\" ]; then
+  OLD=\"\${DEST%/}.old.$$\"
+  mv \"\$DEST\" \"\$OLD\"
+  mv \"\$STAGE\" \"\$DEST\"
+  rm -rf \"\$OLD\"
+else
+  mkdir -p \"\$(dirname \"\$DEST\")\"
+  mv \"\$STAGE\" \"\$DEST\"
+fi
+chown -R ${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER} \"\$DEST\" 2>/dev/null || true
+rm -f \"\$REMOTE_TAR\"
+"
 fi
 
 # 9. run startup hook if exists
-ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "cd '$DEST_WS' && [ -x ./startup.sh ] && ./startup.sh || true" || true
+
 
 # 10. run 'prepare' if provided
 if [ -n "${INPUT_PREPARE:-}" ]; then
