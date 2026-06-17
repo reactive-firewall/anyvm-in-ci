@@ -331,7 +331,7 @@ NEW_PUB="$1"
 for homedir in /root /home/*; do
   [ -d "$homedir" ] || continue
   mkdir -p "$homedir/.ssh"
-  tmp=$(mktemp -p "$homedir/.ssh" auth.XXXXXX)
+  tmp=$(mktemp "$homedir/.ssh/auth.XXXXXX")
   printf '%s\n' "$NEW_PUB" > "$tmp"
   chmod 600 "$tmp"
   mv "$tmp" "$homedir/.ssh/authorized_keys"
@@ -341,7 +341,7 @@ for homedir in /root /home/*; do
 done
 # ensure root authorized_keys
 mkdir -p /root/.ssh
-tmp_root=$(mktemp -p /root/.ssh auth.XXXXXX)
+tmp_root=$(mktemp /root/.ssh/auth.XXXXXX)
 printf '%s\n' "$NEW_PUB" > "$tmp_root"
 chmod 600 "$tmp_root"
 mv "$tmp_root" /root/.ssh/authorized_keys || true
