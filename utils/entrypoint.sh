@@ -105,6 +105,7 @@ VMSH_CMD="${INPUT_CUSTOM_SHELL_NAME:-vmsh.sh}"
 EPHEM_KEY_TYPE="rsa"
 EPHEM_KEY_BITS=3072
 
+debug_log "Ensure cache dirs exists"
 mkdir -p "$ANYVM_CACHE_DIR" "$DATA_DIR"
 
 # helper: fail with message
@@ -184,18 +185,26 @@ download_file(){
   mv "$tmp" "$dest"; return 0
 }
 
-debug_log "Ensure cache dirs exsist"
-mkdir -p "$ANYVM_CACHE_DIR" "$DATA_DIR/images"
+debug_log "Ensure image cache dir exists"
+mkdir -p "$DATA_DIR/images"
+
+# TODO: carefully resolve relative path to a canonical path
+ANYVM_ROTATE_RKEYS_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/rotate_root_keys.sh" ;
 
 debug_log "Ensure we have anyvm.py"
 # Download anyvm.py (kept)
 ANYVM_PY_PATH="$ANYVM_CACHE_DIR/anyvm.py"
+
+# TODO: leverage cache here
 ANYVM_URL="https://raw.githubusercontent.com/anyvm-org/anyvm/${ANYVM_SHA}/anyvm.py"
 download_file "$ANYVM_URL" "$ANYVM_PY_PATH" || die "failed to download anyvm.py"
 debug_log "download anyvm.py"
 chmod +x "$ANYVM_PY_PATH" || true
+
+# 2b. at this point we can expect a working anyvm.py tool
 ANYVM_BIN="$ANYVM_PY_PATH"
 
+# 2c. (prep) Pre-cache Speculative "needed" resources locally
 ANYVM_NAME_SUFFIX=""
 ANYVM_RELEASE_TAG="v${ANYVM_VERSION}"
 RB_OWNER="anyvm-org"
@@ -214,7 +223,7 @@ fi
 ANYVM_NAME="${ANYVM_OSNAME}-${ANYVM_RELEASE}${ANYVM_NAME_SUFFIX}"
 debug_log "Requesting target ${ANYVM_NAME:-}"
 
-# 3. Try image extensions (preferred order)
+# 2c. (work) Try image extensions (preferred order)
 IMAGE_PATH=""
 for ext in "qcow2.zst" "qemu"; do
   cand="$DATA_DIR/images/${ANYVM_NAME}.${ext}"
@@ -230,10 +239,10 @@ for ext in "qcow2.zst" "qemu"; do
 done ;
 [ -n "$IMAGE_PATH" ] || die "no image found for ${ANYVM_NAME} (.qcow2.zst nor .qemu) in ${DATA_DIR}/images"
 
-# 4. Keys: .pub (public) and .id_rsa (private)
+# 2d. Fetch (Speculatively "needed") baked-in key-pair for guest VM
 BAKED_PUB="$DATA_DIR/${ANYVM_NAME}.pub"
 BAKED_PRIV="$DATA_DIR/${ANYVM_NAME}"
-
+# URLs for baked keys: .pub (public) and .id_rsa (private)
 PUB_URL="${BASE_URL}/${ANYVM_NAME}-id_rsa.pub"
 PRIV_URL="${BASE_URL}/${ANYVM_NAME}-host.id_rsa"
 
@@ -254,8 +263,8 @@ fi
 
 # TODO: dynamically use --qcow2 when cached
 
-# 5. start VM with VNC disabled
-# need way to use pid file eg --pidfile "$DATA_DIR/anyvm.pid"
+# 3. start VM
+# TODO: need way to use pid file eg --pidfile "$DATA_DIR/anyvm.pid"
 START_ARGS=(--os "${ANYVM_OSNAME}" --mem "$ANYVM_MEM" --detach --builder "$ANYVM_VERSION")
 if [ -n "$ANYVM_ARCH" ] ; then
   START_ARGS+=(--arch "${ANYVM_ARCH}")
@@ -263,9 +272,11 @@ fi
 if [ -n "$ANYVM_RELEASE" ] ; then
   START_ARGS+=(--release "${ANYVM_RELEASE}")
 fi
+# with fixed CPU count
 if [ -n "$ANYVM_CPU" ]; then
   START_ARGS+=(--cpu "$ANYVM_CPU")
 fi
+# with VNC disabled (CI focused)
 if matches "$ANYVM_USE_VNC" "true" ; then
   printf "::warning file='%s',title='EXPOSED':: %s\n" "${0}" "VM's VNC is exposed. This is not recommended in a CI/CD environment!"
 else
@@ -304,7 +315,7 @@ wait_for_ssh "$VM_SSH_HOST" "$VM_SSH_PORT" 360 || die "SSH did not become availa
 debug_log "Guest VM became available (on $VM_SSH_HOST:$VM_SSH_PORT)" ;
 
 debug_log "Refreshing VM keys" ;
-# 6. RSA-3072 ephemeral key generation with expiry comment
+# 4. RSA-3072 ephemeral key generation with expiry comment
 # TODO: don't use date (birthday-weakness)
 EPHEM_KEY="${HOME:-.}/id_ci_vm_ephemeral_$(date -u +%s)_rsa"
 ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -V -1m:+6h -C "gha-ephemeral-$(date -u +%s)" >/dev/null || die "Failed to generate ephemeral keys"
@@ -325,11 +336,11 @@ fi
 # compute expiry timestamp (store in comment or file if needed)
 # EXP_TS=$(( $(date +%s) + "$GITHUB_TIMEOUT" ))
 
-# 6b. prepare env export script for the VM: gather non-sensitive GITHUB_* and INPUT_ENVS
+# 4b. prepare env export script for the VM: gather non-sensitive GITHUB_* and INPUT_ENVS
 ENV_SCRIPT_LOCAL="$DATA_DIR/env_forward.sh"
 SAFE_GITHUB_LIST='GITHUB_ACTION GITHUB_ACTIONS GITHUB_WORKFLOW GITHUB_RUN_ID GITHUB_RUN_NUMBER GITHUB_JOB GITHUB_REPOSITORY GITHUB_REPOSITORY_OWNER GITHUB_REF GITHUB_SHA GITHUB_ACTOR'
 
-debug_log "..=> Defining ssh env wrapper" ;
+debug_log "..=> Defining ssh env helper" ;
 
 # Usage: build_sendenv_opts [ENV_INPUTS]
 # Returns: prints ssh options like: -o SendEnv=VAR1 -o SendEnv=VAR2 ...
@@ -371,165 +382,58 @@ build_sendenv_opts() {
 
 debug_log "..=> Defined" ;
 
-# 6c. rotation: replace all users' authorized_keys (root) with ephemeral pubkey — safer atomic replace
+# 4c. rotation: replace all users' authorized_keys (root) with ephemeral pubkey — safer atomic replace
 EPHEM_PUB_CONTENT="$(cat ${EPHEM_KEY}.pub)"
 
-debug_log "..=> Generating script to rotate keys" ;
-
+debug_log "..=> Preparing script to rotate Guest VM keys" ;
 ROTATE_ROOT_SCRIPT_PATH="$DATA_DIR/rotate_root_$$.sh"
-cat > "$ROTATE_ROOT_SCRIPT_PATH" <<'ROTSCR'
-#!/usr/bin/env bash
-set -eu
-NEW_PUB="$1"
-# write to temp and atomically move for each homedir
-for homedir in /root /home/*; do
-  [ -d "$homedir" ] || continue
-  mkdir -p "$homedir/.ssh"
-  tmp=$(mktemp "$homedir/.ssh/auth.XXXXXX")
-  printf '%s\n' "$NEW_PUB" > "$tmp"
-  chmod 600 "$tmp"
-  mv "$tmp" "$homedir/.ssh/authorized_keys"
-  # try to set ownership if home directory name matches username
-  user=$(basename "$homedir")
-  chown "$user":"$user" "$homedir/.ssh/authorized_keys" 2>/dev/null || true
-done
-# ensure root authorized_keys
-mkdir -p /root/.ssh
-tmp_root=$(mktemp /root/.ssh/auth.XXXXXX)
-printf '%s\n' "$NEW_PUB" > "$tmp_root"
-chmod 600 "$tmp_root"
-mv "$tmp_root" /root/.ssh/authorized_keys || true
-# reload sshd safely (try multiple names)
-# Try commands safely: run "$@" and return 0/1 (no exit)
-_try() {
-  if command -v "$1" >/dev/null 2>&1; then
-    shift
-    "$@" >/dev/null 2>&1 && return 0 || return 1
-  fi
-  return 2
-}
-
-# Try a list of command invocations (each invocation is a single string)
-_try_list() {
-  for cmd in "$@"; do
-    # shellcheck disable=SC2086
-    sh -c "$cmd" >/dev/null 2>&1 && return 0
-  done
-  return 1
-}
-
-# Common service names to try (order: typical -> fallback)
-SERVICE_NAMES="sshd ssh"
-
-# 1) systemctl (Linux)
-if command -v systemctl >/dev/null 2>&1; then
-  for name in $SERVICE_NAMES; do
-    _try systemctl systemctl try-reload-or-restart "${name}.service" && exit 0
-    _try systemctl systemctl reload "${name}.service" && exit 0
-    _try systemctl systemctl restart "${name}.service" && exit 0
-  done
-fi
-
-# 2) rc.d / service wrapper used on FreeBSD/OpenBSD/NetBSD
-# On BSDs, `service name action` is typical; on some systems action "reload" may not exist.
-if command -v service >/dev/null 2>&1; then
-  for name in $SERVICE_NAMES; do
-    _try service service "$name" reload && exit 0
-    _try service service "$name" restart && exit 0
-    # On some systems the service control is in /etc/rc.d/ or /usr/sbin/rcctl (OpenBSD)
-  done
-fi
-
-# 3) rcctl (OpenBSD) — prefer explicit rcctl if present
-if command -v rcctl >/dev/null 2>&1; then
-  for name in $SERVICE_NAMES; do
-    _try rcctl rcctl reload "$name" && exit 0
-    _try rcctl rcctl restart "$name" && exit 0
-  done
-fi
-
-# 4) /etc/rc.d or /usr/local/etc/rc.d scripts (FreeBSD-style direct script)
-for name in $SERVICE_NAMES; do
-  if [ -x "/etc/rc.d/$name" ]; then
-    _try_list "/etc/rc.d/$name reload" "/etc/rc.d/$name restart" && exit 0
-  fi
-  if [ -x "/usr/local/etc/rc.d/$name" ]; then
-    _try_list "/usr/local/etc/rc.d/$name reload" "/usr/local/etc/rc.d/$name restart" && exit 0
-  fi
-done
-
-# 5) OpenSSH's sshd direct signal (safe reload using SIGHUP) — will not restart if binary name differs
-for candidate in /usr/sbin/sshd /usr/local/sbin/sshd /sbin/sshd /usr/sbin/ssh; do
-  if [ -x "$candidate" ]; then
-    # Find master pid (sshd -T is not used). Use pgrep for sshd process.
-    if command -v pgrep >/dev/null 2>&1; then
-      pid=$(pgrep -x sshd || true)
-    else
-      pid=$(ps ax | awk '/[s]shd/ {print $1; exit}' || true)
-    fi
-    if [ -n "$pid" ]; then
-      kill -HUP "$pid" >/dev/null 2>&1 && exit 0
-    fi
-  fi
-done
-
-# 6) Haiku (launch_daemon control via haiku-specific tools)
-# Haiku often runs services via launch_daemon; use `launchctl` if available (Haiku compatibility) or try haikucontrol.
-if command -v launchctl >/dev/null 2>&1; then
-  for name in $SERVICE_NAMES; do
-    _try launchctl launchctl unload "/system/services/${name}" && _try launchctl launchctl load "/system/services/${name}" && exit 0
-  done
-fi
-if command -v haikucontrol >/dev/null 2>&1; then
-  for name in $SERVICE_NAMES; do
-    _try haikucontrol haikucontrol restart "$name" && exit 0
-  done
-fi
-
-# 7) Fall back: try common init scripts (SysV-style)
-for name in $SERVICE_NAMES; do
-  if [ -x "/etc/init.d/$name" ]; then
-    _try_list "/etc/init.d/$name reload" "/etc/init.d/$name restart" && exit 0
-  fi
-done
-ROTSCR
+cp -vf "${ANYVM_ROTATE_RKEYS_FILE}" "$ROTATE_ROOT_SCRIPT_PATH"
+debug_log "..=> Staged" & debug_log "....=> Setting Permissions on staged script" ;
 chmod +x "$ROTATE_ROOT_SCRIPT_PATH"
 
+debug_log "....=> Ready to transfer \"${ROTATE_ROOT_SCRIPT_PATH}\" to Guest VM" ;
 
-
-# 6d. copy rotation script and run it using baked key (best-effort)
+# 4d. copy rotation script and run it using baked key (best-effort)
 if [ -f "$BAKED_PRIV" ]; then
   SSH_BAKED_OPTS=$(build_sendenv_opts);
   SSH_BAKED_OPTS="$SSH_BAKED_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $BAKED_PRIV"
+  debug_log "......=> Waiting for transfer" ;
   scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "$ROTATE_ROOT_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/rotate_root.sh || die "failed to scp rotate_root script"
-  ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "bash /tmp/rotate_root.sh '$(printf "%s" "$EPHEM_PUB_CONTENT" | sed "s/'/'\\\\''/g")'" || echo "warning: rotate_root execution failed"
+  # TODO: cleanup local script copy once transferred
+  debug_log "....=> Transferred" & debug_log "..=> Waiting for rotation" &
+  ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "bash /tmp/rotate_root.sh '$(printf "%s" "$EPHEM_PUB_CONTENT" | sed "s/'/'\\\\''/g")'" || die "warning: rotate_root execution failed"
+  debug_log "..=> Rotated"
 else
   die "warning: baked private key not available; cannot run remote rotation via baked key"
 fi
 
+debug_log "=> Will now try ephemeral key pair"
+
+SSH_EPHEMERAL_OPTS=$(build_sendenv_opts);
 # verify ephemeral works (try a few times)
-SSH_EPHEMERAL_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $EPHEM_KEY -o ConnectTimeout=5"
+SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $EPHEM_KEY -o ConnectTimeout=5"
 ok=1
 for _step in 1 2 3; do
-  if ssh $SSH_EPHEMERAL_OPTS -o BatchMode=yes root@"$VM_SSH_HOST" "echo OK" >/dev/null 2>&1; then ok=0; break; fi
+  if ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT -o BatchMode=yes root@"$VM_SSH_HOST" "echo OK" >/dev/null 2>&1; then ok=0; break; fi
   sleep 1
 done
 if [ $ok -ne 0 ]; then
   die "warning: ephemeral key login failed; continuing with subsequent steps will fail"
+else
+  debug_log "Keys successfully rotated"
 fi
 
-# 6e. copy host /etc/hosts to guest (temp file) - best-effort
-SSH_BOOT_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $EPHEM_KEY"
+# 4e. copy host /etc/hosts to guest (temp file) - best-effort
 if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh" ]; then
   EPHEM_KEY="$EPHEM_KEY" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
     "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh"
 else
   # best-effort fallback
-  scp $SSH_BOOT_OPTS /etc/hosts root@"$VM_SSH_HOST":/tmp/hosts.guest || true
-  ssh $SSH_BOOT_OPTS root@"$VM_SSH_HOST" "cat /tmp/hosts.guest >> /etc/hosts || true" || true
+  scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT /etc/hosts root@"$VM_SSH_HOST":/tmp/hosts.guest || true
+  ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "cat /tmp/hosts.guest >> /etc/hosts || true" || true
 fi
 
-# 6f. optionally create unprivileged user matching host and set its authorized_keys to its own ephemeral key
+# 4f. optionally create unprivileged user matching host and set its authorized_keys to its own ephemeral key
 if [ "$VM_USER_CREATE" = "true" ]; then
   GUEST_USER="$HOST_USER"
   USER_EPHEM_DIR="$(mktemp -d)"
@@ -562,6 +466,7 @@ if command -v pw >/dev/null 2>&1; then
 fi
 echo "done"
 CRUSER
+
   chmod +x "$CREATE_USER_SCRIPT_PATH"
 
   # copy over script and run it via ephemeral root key (if ephemeral root works) otherwise baked
@@ -592,7 +497,7 @@ EOF
   chmod +x "$WRAPPER"
 fi
 
-# 7. push env_forward and set it on guest (place in /etc/profile.d or user's shell rc)
+# 5. push env_forward and set it on guest (place in /etc/profile.d or user's shell rc)
 # copy using ephemeral key if possible, else baked
 if ssh $SSH_EPHEMERAL_OPTS -o BatchMode=yes root@"$VM_SSH_HOST" "true" >/dev/null 2>&1; then
   scp -P "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$EPHEM_KEY" "$ENV_SCRIPT_LOCAL" root@"$VM_SSH_HOST":/etc/profile.d/gha_env_forward.sh || true
@@ -600,7 +505,7 @@ elif [ -f "$BAKED_PRIV" ]; then
   scp $SSH_BOOT_OPTS "$ENV_SCRIPT_LOCAL" root@"$VM_SSH_HOST":/etc/profile.d/gha_env_forward.sh || true
 fi
 
-# 8. recreate full GITHUB_WORKSPACE path and rsync content
+# 6. recreate full GITHUB_WORKSPACE path and rsync content
 GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
 DEST_WS="$GITHUB_WS"
 GUEST_RSYNC_USER="${GUEST_USER:-root}"
@@ -616,30 +521,30 @@ else
   scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$GITHUB_WS"/* "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
 fi
 
-# 9. run startup hook if exists
+# 7. run startup hook if exists
 ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "cd '$DEST_WS' && [ -x ./startup.sh ] && ./startup.sh || true" || true
 
-# 10. run 'prepare' if provided
+# 8. run 'prepare' if provided
 if [ -n "${INPUT_PREPARE:-}" ]; then
   ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "cd '$DEST_WS' && $INPUT_PREPARE"
 fi
 
-# 11. run CI command (required)
+# 9. run CI command (required)
 if [ -n "${INPUT_RUN:-}" ]; then
   ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "cd '$DEST_WS' && $INPUT_RUN"
 fi
 
-# 12. optional copyback
+# 10. optional copyback
 if [ "$COPYBACK" = "true" ]; then
   rsync -a -e "ssh -p $VM_SSH_PORT -i ${RSYNC_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" ${GUEST_RSYNC_USER}@${VM_SSH_HOST}:"${DEST_WS}/" "$GITHUB_WS/ci-copyback/" || true
 fi
 
-# 12b afterwards
+# 10b afterwards
 if [ -n "${INPUT_AFTERWARDS:-}" ]; then
   ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "cd '$DEST_WS' && $INPUT_AFTERWARDS"
 fi
 
-# 13. stop VM and cleanup
+# 11. stop VM and cleanup
 if [ -f "$DATA_DIR/anyvm.pid" ]; then
   kill "$(cat "$DATA_DIR/anyvm.pid")" 2>/dev/null || true; rm -f "$DATA_DIR/anyvm.pid"
 fi
