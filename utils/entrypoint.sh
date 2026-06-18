@@ -105,9 +105,6 @@ VMSH_CMD="${INPUT_CUSTOM_SHELL_NAME:-vmsh.sh}"
 EPHEM_KEY_TYPE="rsa"
 EPHEM_KEY_BITS=3072
 
-debug_log "Ensure cache dirs exists"
-mkdir -p "$ANYVM_CACHE_DIR" "$DATA_DIR"
-
 # helper: fail with message
 debug_log(){ if [ ${DEBUG} ]; then printf '::debug:: %s\n' "$*" >&2; fi; }
 
@@ -130,6 +127,9 @@ for cmd in "${required[@]}"; do
   fi
 done
 
+debug_log "Ensure cache dirs exists"
+mkdir -p "$ANYVM_CACHE_DIR" "$DATA_DIR"
+
 # optional tools: rsync brew apt-get yum choco
 
 # 1. Install QEMU (minimal cross-platform approach)
@@ -141,6 +141,7 @@ install_qemu(){
   case "$(uname -s)" in
     Linux)
       if command -v apt-get >/dev/null 2>&1; then
+      # TODO: tailor the install to the required for target VM arch
         sudo apt-get update && sudo apt-get install --no-install-recommends -y \
           zstd ovmf xz-utils qemu-utils ca-certificates \
           qemu-system-x86 qemu-system-arm qemu-efi-aarch64 \
@@ -154,7 +155,12 @@ install_qemu(){
       ;;
     Darwin)
       if command -v brew >/dev/null 2>&1; then
+        HOMEBREW_GITHUB_API_TOKEN=${ANYVM_TOKEN:-${GH_TOKEN:-}} ;
+        # TODO: set other hombrew vars like HOMEBREW_NO_ANALYTICS when cache mode is disabled
+        if [ ${DEBUG} ]; then HOMEBREW_VERBOSE=1; fi ;
+        HOMEBREW_NO_INSECURE_REDIRECT=1;  # forbid redirects from secure HTTPS to insecure HTTP
         brew install qemu ;
+        unset HOMEBREW_GITHUB_API_TOKEN ;
       else
         die "Homebrew required on macOS to install qemu"
       fi
