@@ -282,6 +282,10 @@ START_ARGS+=(--ssh-port "${VM_SSH_PORT}")
 # HEURISTIC abort after 1/100th (1%) of step max timeout
 # --boot-timeout-sec ( (($GITHUB_TIMEOUT * 60) / 100) )
 
+# DEBUG MARK
+hostname || true ;
+
+debug_log "Selected ANYVM args => ${START_ARGS[@]}" ;
 
 python3 "$ANYVM_BIN" "${START_ARGS[@]}"
 
@@ -296,6 +300,10 @@ else
 fi
 }
 wait_for_ssh "$VM_SSH_HOST" "$VM_SSH_PORT" 360 || die "SSH did not become available on $VM_SSH_HOST:$VM_SSH_PORT"
+
+debug_log "VM became available" ;
+# DEBUG MARK
+hostname || true ;
 
 # 6. RSA-3072 ephemeral key generation with expiry comment
 EPHEM_DIR="$(mktemp -d)"

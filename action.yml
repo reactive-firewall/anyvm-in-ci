@@ -135,30 +135,34 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: "Calculate Commit SHA"
-      id: output_sha
+    - name: Detect guest arch
+      id: detect_arch
+      if: ${{ inputs.arch == null || inputs.arch == '' }}
       shell: bash
       env:
-        # Mask the token from logs by passing through environment variable
-        ANYVM_ACTION_PATH: ${{ github.action_path }}
+        RUNNER_ARCH: ${{ runner.arch }}
+        RUNNER_DEBUG: ${{ runner.debug }}
       run: |
-        printf "sha=%s\n" $(git -C ${ANYVM_ACTION_PATH} rev-parse --verify HEAD) >> "$GITHUB_OUTPUT"
-        printf "::debug::%s %s\n" "AnyVM-in-CI Action will use" $(git -C ${ANYVM_ACTION_PATH} rev-parse --verify HEAD)
-        printf "ANYVM_ACTION_SHA=%s\n" $(git -C ${ANYVM_ACTION_PATH} rev-parse --verify HEAD) >> "$GITHUB_ENV"
-    - name: pre-checkout repository for actions
-      id: prefetch_helper_gha
-      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      with:
-        persist-credentials: false
-        ref: ${{ steps.output_sha.outputs.sha }}
-        sparse-checkout: '.github/actions/detect-default-guest-arch'
-        token: ${{ inputs.token }}
-        repository: 'reactive-firewall/anyvm-in-ci'
-    - name: Detect Host arch
-      id: guest-arch
-      uses: ./.github/actions/detect-default-guest-arch
-      with:
-        arch: ${{ inputs.arch || '' }}
+        set -euo pipefail
+        # Map documented GitHub runner.arch values to canonical guest_arch
+        case "${RUNNER_ARCH:-}" in
+          x86|X86|x64|X64)
+            chosen="x86_64"
+            ;;
+          ARM64|arm64|ARM|arm)
+            chosen="aarch64"
+            ;;
+          *)
+            printf "::error::Unsupported or unknown runner.arch: %s\n" "${RUNNER_ARCH:-<unset>}"
+            exit 2
+            ;;
+        esac
+        # Emit debug logs only when runner.debug is true
+        if [ "${RUNNER_DEBUG:-false}" = "true" ]; then
+          printf "::debug::Detected runner.arch=%s\n" "${RUNNER_ARCH:-<unset>}"
+          printf "::debug::Mapped guest_arch=%s\n" "$chosen"
+        fi
+        printf "guest_arch=%s\n" "$chosen" >> "$GITHUB_OUTPUT"
     - name: Detect CPU count
       id: detect_cpus
       shell: bash
@@ -193,7 +197,7 @@ runs:
         INPUT_RUN: ${{ inputs.run }}
         INPUT_AFTERWARDS: ${{ inputs.afterwards }}
         INPUT_RELEASE: ${{ inputs.release }}
-        INPUT_ARCH: ${{ inputs.arch }} # TODO: needs to have fallback to runner.os arch
+        INPUT_ARCH: ${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}
         INPUT_ENVS: ${{ inputs.envs }} # TODO: needs to be bridged
         INPUT_MEM: ${{ inputs.mem }}  # TODO: should also provide host swap on linux when value is above runner shreshold, etc.
         INPUT_CPU: ${{ inputs.cpu || steps.detect_cpus.outputs.cpus }}
@@ -231,6 +235,7 @@ runs:
         ANYVM_ACTION_PATH: ${{ github.action_path }}
         RUNNER_DEBUG: ${{ runner.debug }}
       run: |
+        # Reap VM
         if [ "${RUNNER_DEBUG:-}" = "1" ]; then printf "::debug:: %s\n" "Looking for '${ANYVM_ACTION_PATH}'" ; fi ;
         if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ] ; then
           sudo "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ;
