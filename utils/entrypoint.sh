@@ -407,7 +407,7 @@ if [ -f "$BAKED_PRIV" ]; then
   scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "$ROTATE_ROOT_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/rotate_root.sh || die "failed to scp rotate_root script"
   # TODO: cleanup local script copy once transferred
   debug_log "....=> Transferred" & debug_log "..=> Waiting for rotation" &
-  ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "bash /tmp/rotate_root.sh '$(printf "%s" "$EPHEM_PUB_CONTENT" | sed "s/'/'\\\\''/g")'" || die "warning: rotate_root execution failed"
+  ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "sh /tmp/rotate_root.sh '$(printf "%s" "$EPHEM_PUB_CONTENT" | sed "s/'/'\\\\''/g")'" || die "warning: rotate_root execution failed"
   debug_log "..=> Rotated"
 else
   die "warning: baked private key not available; cannot run remote rotation via baked key"
