@@ -101,6 +101,7 @@ ANYVM_USE_IPV6="${INPUT_USE_IPV6:-false}" # adds --enable-ipv6
 SYNC_METHOD="${INPUT_SYNC:-scp}"
 COPYBACK="${INPUT_COPYBACK:-true}"
 ENV_INPUTS="${INPUT_ENVS:-}"
+VMSH_CMD="${INPUT_CUSTOM_SHELL_NAME:-vmsh.sh}"
 EPHEM_KEY_TYPE="rsa"
 EPHEM_KEY_BITS=3072
 
@@ -220,7 +221,7 @@ for ext in "qcow2.zst" "qemu"; do
   url="${BASE_URL}/${ANYVM_NAME}.${ext}"
   debug_log "fetching target from ${url}"
   if download_file "$url" "$cand"; then
-    if [ -f "${IMAGE_PATH}" ]; then
+    if [ -n "${IMAGE_PATH}" ] && [ -f "${IMAGE_PATH}" ]; then
       continue ;
     else
       IMAGE_PATH="$cand"; chmod 644 "$IMAGE_PATH" || true;
@@ -282,12 +283,11 @@ START_ARGS+=(--ssh-port "${VM_SSH_PORT}")
 # HEURISTIC abort after 1/100th (1%) of step max timeout
 # --boot-timeout-sec ( (($GITHUB_TIMEOUT * 60) / 100) )
 
-# DEBUG MARK
-hostname || true ;
+debug_log "Starting ANYVM with args: ${START_ARGS[@]}" ;
 
-debug_log "Selected ANYVM args => ${START_ARGS[@]}" ;
+python3 "$ANYVM_BIN" "${START_ARGS[@]}" ;
 
-python3 "$ANYVM_BIN" "${START_ARGS[@]}"
+debug_log "=> Waiting for Guest VM to become available"
 
 # wait_for_ssh: use nc if present, otherwise attempt ssh -o BatchMode test
 wait_for_ssh(){ local h=$1 p=$2 t=${3:-180}; local s; s=$(date +%s); if command -v nc >/dev/null 2>&1; then
@@ -301,50 +301,81 @@ fi
 }
 wait_for_ssh "$VM_SSH_HOST" "$VM_SSH_PORT" 360 || die "SSH did not become available on $VM_SSH_HOST:$VM_SSH_PORT"
 
-debug_log "VM became available" ;
-# DEBUG MARK
-hostname || true ;
+debug_log "Guest VM became available (on $VM_SSH_HOST:$VM_SSH_PORT)" ;
 
+debug_log "Refreshing VM keys" ;
 # 6. RSA-3072 ephemeral key generation with expiry comment
-EPHEM_DIR="$(mktemp -d)"
-EPHEM_KEY="$EPHEM_DIR/id_ci_vm_rsa"
-ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -C "gha-ephemeral-$(date -u +%s)"
+# TODO: don't use date (birthday-weakness)
+EPHEM_KEY="${HOME:-.}/id_ci_vm_ephemeral_$(date -u +%s)_rsa"
+ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -V -1m:+6h -C "gha-ephemeral-$(date -u +%s)" >/dev/null || die "Failed to generate ephemeral keys"
+
+debug_log "Checking for new ephemeral key pair"
+
+if [ ! -f "$EPHEM_KEY" ] || [ ! -f "$EPHEM_KEY.pub" ]; then
+  debug_log "=> Can not find new ephemeral keys"
+  printf '%s\n' "warning: ephemeral key pair not found at $EPHEM_KEY / $EPHEM_KEY.pub; Rotating SSH steps WILL fail"
+else
+  debug_log "=> Found new ephemeral keys"
+  # TODO: check that found keys are indeed a pair
+  ssh-keygen -lf "$EPHEM_KEY.pub"
+fi
+
+# TODO: HEREMARK
 
 # compute expiry timestamp (store in comment or file if needed)
 # EXP_TS=$(( $(date +%s) + "$GITHUB_TIMEOUT" ))
 
 # 6b. prepare env export script for the VM: gather non-sensitive GITHUB_* and INPUT_ENVS
 ENV_SCRIPT_LOCAL="$DATA_DIR/env_forward.sh"
-{
-  echo "#!/bin/sh"
-  # forward a selective whitelist of GITHUB_* variables (escape single quotes)
-  for var in $(env | awk -F= '/^GITHUB_/ {print $1}'); do
-    case "$var" in
-      GITHUB_ACTION|GITHUB_ACTIONS|GITHUB_WORKFLOW|GITHUB_RUN_ID|GITHUB_RUN_NUMBER|GITHUB_JOB|GITHUB_REPOSITORY|GITHUB_REPOSITORY_OWNER|GITHUB_REF|GITHUB_SHA|GITHUB_ACTOR)
-        val="${!var}"
-        # escape single quotes safely
-        val_esc=$(printf "%s" "$val" | sed "s/'/'\\\\''/g")
-        echo "export $var='$val_esc'"
-        ;;
-      *)
-        ;;
-    esac
+SAFE_GITHUB_LIST='GITHUB_ACTION GITHUB_ACTIONS GITHUB_WORKFLOW GITHUB_RUN_ID GITHUB_RUN_NUMBER GITHUB_JOB GITHUB_REPOSITORY GITHUB_REPOSITORY_OWNER GITHUB_REF GITHUB_SHA GITHUB_ACTOR'
+
+debug_log "..=> Defining ssh env wrapper" ;
+
+# Usage: build_sendenv_opts [ENV_INPUTS]
+# Returns: prints ssh options like: -o SendEnv=VAR1 -o SendEnv=VAR2 ...
+build_sendenv_opts() {
+  sendenv_opts=
+  # helper: check if a variable name is present in the environment
+  env_has() {
+    # printf to avoid external env binary in very minimal shells; use 'env' if unavailable
+    # This implementation uses 'env' if present, otherwise falls back to /bin/printenv if available.
+    if command -v env >/dev/null 2>&1; then
+      env | awk -F= '{print $1}' | grep -x -- "$1" >/dev/null 2>&1
+    else
+      printenv 2>/dev/null | awk -F= '{print $1}' | grep -x -- "$1" >/dev/null 2>&1
+    fi
+  }
+
+  for gv in $SAFE_GITHUB_LIST; do
+    if env_has "$gv"; then
+      sendenv_opts="$sendenv_opts -o SendEnv=$gv"
+    fi
   done
-  # inject user-specified envs in INPUT_ENVS (format KEY=VAL; comma or newline separated)
-  if [ -n "$ENV_INPUTS" ]; then
-    IFS=$'\n,'; for e in $ENV_INPUTS; do
-      k=$(printf "%s" "$e" | cut -d= -f1); v=$(printf "%s" "$e" | cut -d= -f2-)
-      k=$(printf "%s" "$k" | sed 's/[^A-Za-z0-9_]/_/g')
-      v_esc=$(printf "%s" "$v" | sed "s/'/'\\\\''/g")
-      echo "export $k='$v_esc'"
+
+  # second argument or ENV_INPUTS env var may provide extra names (space-separated)
+  ENV_INPUTS_ARG=${1:-$ENV_INPUTS}
+  if [ -n "$ENV_INPUTS_ARG" ]; then
+    for name in $ENV_INPUTS_ARG; do
+      # sanitize to [A-Za-z0-9_]
+      name_clean=$(printf '%s' "$name" | sed 's/[^A-Za-z0-9_]//g')
+      [ -z "$name_clean" ] && continue
+      if env_has "$name_clean"; then
+        sendenv_opts="$sendenv_opts -o SendEnv=$name_clean"
+      fi
     done
-    unset IFS
   fi
-} > "$ENV_SCRIPT_LOCAL"
-chmod +x "$ENV_SCRIPT_LOCAL"
+
+  # Print result (caller can capture with var=$(build_sendenv_opts) or use eval)
+  printf '%s' "$sendenv_opts"
+}
+
+debug_log "..=> Defined" ;
 
 # 6c. rotation: replace all users' authorized_keys (root) with ephemeral pubkey — safer atomic replace
 EPHEM_PUB_CONTENT="$(cat ${EPHEM_KEY}.pub)"
+
+debug_log "..=> Generating script to rotate keys" ;
+
 ROTATE_ROOT_SCRIPT_PATH="$DATA_DIR/rotate_root_$$.sh"
 cat > "$ROTATE_ROOT_SCRIPT_PATH" <<'ROTSCR'
 #!/usr/bin/env bash
@@ -369,21 +400,109 @@ printf '%s\n' "$NEW_PUB" > "$tmp_root"
 chmod 600 "$tmp_root"
 mv "$tmp_root" /root/.ssh/authorized_keys || true
 # reload sshd safely (try multiple names)
-if command -v service >/dev/null 2>&1; then
-  service sshd reload || service sshd restart || service ssh restart || true
-else
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl try-reload-or-restart sshd.service || systemctl restart sshd.service || systemctl restart ssh.service || true
+# Try commands safely: run "$@" and return 0/1 (no exit)
+_try() {
+  if command -v "$1" >/dev/null 2>&1; then
+    shift
+    "$@" >/dev/null 2>&1 && return 0 || return 1
   fi
+  return 2
+}
+
+# Try a list of command invocations (each invocation is a single string)
+_try_list() {
+  for cmd in "$@"; do
+    # shellcheck disable=SC2086
+    sh -c "$cmd" >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
+# Common service names to try (order: typical -> fallback)
+SERVICE_NAMES="sshd ssh"
+
+# 1) systemctl (Linux)
+if command -v systemctl >/dev/null 2>&1; then
+  for name in $SERVICE_NAMES; do
+    _try systemctl systemctl try-reload-or-restart "${name}.service" && exit 0
+    _try systemctl systemctl reload "${name}.service" && exit 0
+    _try systemctl systemctl restart "${name}.service" && exit 0
+  done
 fi
+
+# 2) rc.d / service wrapper used on FreeBSD/OpenBSD/NetBSD
+# On BSDs, `service name action` is typical; on some systems action "reload" may not exist.
+if command -v service >/dev/null 2>&1; then
+  for name in $SERVICE_NAMES; do
+    _try service service "$name" reload && exit 0
+    _try service service "$name" restart && exit 0
+    # On some systems the service control is in /etc/rc.d/ or /usr/sbin/rcctl (OpenBSD)
+  done
+fi
+
+# 3) rcctl (OpenBSD) — prefer explicit rcctl if present
+if command -v rcctl >/dev/null 2>&1; then
+  for name in $SERVICE_NAMES; do
+    _try rcctl rcctl reload "$name" && exit 0
+    _try rcctl rcctl restart "$name" && exit 0
+  done
+fi
+
+# 4) /etc/rc.d or /usr/local/etc/rc.d scripts (FreeBSD-style direct script)
+for name in $SERVICE_NAMES; do
+  if [ -x "/etc/rc.d/$name" ]; then
+    _try_list "/etc/rc.d/$name reload" "/etc/rc.d/$name restart" && exit 0
+  fi
+  if [ -x "/usr/local/etc/rc.d/$name" ]; then
+    _try_list "/usr/local/etc/rc.d/$name reload" "/usr/local/etc/rc.d/$name restart" && exit 0
+  fi
+done
+
+# 5) OpenSSH's sshd direct signal (safe reload using SIGHUP) — will not restart if binary name differs
+for candidate in /usr/sbin/sshd /usr/local/sbin/sshd /sbin/sshd /usr/sbin/ssh; do
+  if [ -x "$candidate" ]; then
+    # Find master pid (sshd -T is not used). Use pgrep for sshd process.
+    if command -v pgrep >/dev/null 2>&1; then
+      pid=$(pgrep -x sshd || true)
+    else
+      pid=$(ps ax | awk '/[s]shd/ {print $1; exit}' || true)
+    fi
+    if [ -n "$pid" ]; then
+      kill -HUP "$pid" >/dev/null 2>&1 && exit 0
+    fi
+  fi
+done
+
+# 6) Haiku (launch_daemon control via haiku-specific tools)
+# Haiku often runs services via launch_daemon; use `launchctl` if available (Haiku compatibility) or try haikucontrol.
+if command -v launchctl >/dev/null 2>&1; then
+  for name in $SERVICE_NAMES; do
+    _try launchctl launchctl unload "/system/services/${name}" && _try launchctl launchctl load "/system/services/${name}" && exit 0
+  done
+fi
+if command -v haikucontrol >/dev/null 2>&1; then
+  for name in $SERVICE_NAMES; do
+    _try haikucontrol haikucontrol restart "$name" && exit 0
+  done
+fi
+
+# 7) Fall back: try common init scripts (SysV-style)
+for name in $SERVICE_NAMES; do
+  if [ -x "/etc/init.d/$name" ]; then
+    _try_list "/etc/init.d/$name reload" "/etc/init.d/$name restart" && exit 0
+  fi
+done
 ROTSCR
 chmod +x "$ROTATE_ROOT_SCRIPT_PATH"
 
+
+
 # 6d. copy rotation script and run it using baked key (best-effort)
 if [ -f "$BAKED_PRIV" ]; then
-  SSH_BAKED_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $BAKED_PRIV"
-  scp $SSH_BAKED_OPTS "$ROTATE_ROOT_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/rotate_root.sh || die "failed to scp rotate_root script"
-  ssh $SSH_BAKED_OPTS root@"$VM_SSH_HOST" "bash /tmp/rotate_root.sh '$(printf "%s" "$EPHEM_PUB_CONTENT" | sed "s/'/'\\\\''/g")'" || echo "warning: rotate_root execution failed"
+  SSH_BAKED_OPTS=$(build_sendenv_opts);
+  SSH_BAKED_OPTS="$SSH_BAKED_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $BAKED_PRIV"
+  scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "$ROTATE_ROOT_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/rotate_root.sh || die "failed to scp rotate_root script"
+  ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "bash /tmp/rotate_root.sh '$(printf "%s" "$EPHEM_PUB_CONTENT" | sed "s/'/'\\\\''/g")'" || echo "warning: rotate_root execution failed"
 else
   die "warning: baked private key not available; cannot run remote rotation via baked key"
 fi
