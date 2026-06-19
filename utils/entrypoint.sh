@@ -105,7 +105,7 @@ VMSH_CMD="${INPUT_CUSTOM_SHELL_NAME:-vmsh.sh}"
 EPHEM_KEY_TYPE="rsa"
 EPHEM_KEY_BITS=3072
 
-# helper: fail with message
+# helper: conditional diagnostic with message
 debug_log(){ if [ ${DEBUG} ]; then printf '::debug:: %s\n' "$*" >&2; fi; }
 
 # helper: fail with message
@@ -196,6 +196,7 @@ mkdir -p "$DATA_DIR/images"
 
 # TODO: carefully resolve relative path to a canonical path
 ANYVM_ROTATE_RKEYS_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/rotate_root_keys.sh" ;
+ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/bridge-hosts-stub.sh" ;
 
 debug_log "Ensure we have anyvm.py"
 # Download anyvm.py (kept)
@@ -324,7 +325,7 @@ debug_log "Refreshing VM keys" ;
 # 4. RSA-3072 ephemeral key generation with expiry comment
 # TODO: don't use date (birthday-weakness)
 EPHEM_KEY="${HOME:-.}/id_ci_vm_ephemeral_$(date -u +%s)_rsa"
-ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -V -1m:+6h -C "gha-ephemeral-$(date -u +%s)" >/dev/null || die "Failed to generate ephemeral keys"
+ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -V -1m:+6h -C "ci-vm-ephemeral-$(date -u +%s)" >/dev/null || die "Failed to generate ephemeral keys"
 
 debug_log "Checking for new ephemeral key pair"
 
@@ -406,7 +407,7 @@ if [ -f "$BAKED_PRIV" ]; then
   debug_log "......=> Waiting for transfer" ;
   scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "$ROTATE_ROOT_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/rotate_root.sh || die "failed to scp rotate_root script"
   # TODO: cleanup local script copy once transferred
-  debug_log "....=> Transferred" & debug_log "..=> Waiting for rotation" &
+  debug_log "....=> Transferred" & {rm -f "$ROTATE_ROOT_SCRIPT_PATH" 2>/dev/null || true ;} & debug_log "..=> Waiting for rotation" &
   ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "sh /tmp/rotate_root.sh '$(printf "%s" "$EPHEM_PUB_CONTENT" | sed "s/'/'\\\\''/g")'" || die "warning: rotate_root execution failed"
   debug_log "..=> Rotated"
 else
@@ -430,14 +431,18 @@ else
 fi
 
 # 4e. copy host /etc/hosts to guest (temp file) - best-effort
+debug_log "Bridging host file to guest"
 if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh" ]; then
-  EPHEM_KEY="$EPHEM_KEY" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
+  ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
     "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh"
 else
   # best-effort fallback
-  scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT /etc/hosts root@"$VM_SSH_HOST":/tmp/hosts.guest || true
-  ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "cat /tmp/hosts.guest >> /etc/hosts || true" || true
+  debug_log "Bridging via root"
+  scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT /etc/hosts root@"$VM_SSH_HOST":/tmp/hosts.guest || die "failed to scp runner host file script"
+  ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "cat /tmp/hosts.guest >> /etc/hosts || true" || die "failed to clobber Guest /etc/hosts"
 fi
+
+debug_log "Bridging done"
 
 # 4f. optionally create unprivileged user matching host and set its authorized_keys to its own ephemeral key
 if [ "$VM_USER_CREATE" = "true" ]; then
