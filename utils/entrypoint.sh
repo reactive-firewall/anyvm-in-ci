@@ -102,7 +102,7 @@ ANYVM_USE_IPV6="${INPUT_USE_IPV6:-false}" # adds --enable-ipv6
 SYNC_METHOD="${INPUT_SYNC:-scp}"
 COPYBACK="${INPUT_COPYBACK:-true}"
 ENV_INPUTS="${INPUT_ENVS:-}"
-ANYVM_TOOL_CACHE_SUB_DIR="/bin"
+ANYVM_TOOL_CACHE_SUB_DIR="/anyvm-in-ci/bin"
 VMSH_DIR="${RUNNER_TOOL_CACHE:-/opt}${ANYVM_TOOL_CACHE_SUB_DIR:-}"
 VMSH_CMD_NAME="${INPUT_CUSTOM_SHELL_NAME:-vmsh.sh}"
 VMSH_CMD="${VMSH_DIR:-}/${VMSH_CMD_NAME:-}"
@@ -303,7 +303,10 @@ done
 
 debug_log "Ensure cache dirs exists" &
 mkdir -p "$ANYVM_CACHE_DIR" "$DATA_DIR"
-
+debug_log "Ensure tools cache dir exists"
+mkdir -p "${VMSH_DIR}"
+debug_log "Ensure image cache dir exists"
+mkdir -p "$DATA_DIR/images"
 # optional tools: rsync brew apt-get yum choco etc.
 
 debug_log "Checking for qemu tools" ;
