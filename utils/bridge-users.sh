@@ -96,37 +96,116 @@ ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE:-}"
 SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS:-}";
 VM="${VM_SSH_HOST:-127.0.0.1}"
 VM_SSH_PORT="${VM_SSH_PORT:-22}"
+VM_CI_USER="${GUEST_USER:-CI}"
+USER_KEY="${USER_KEY:-}"
 
 # helper: conditional diagnostic with message
-debug_sub_log(){ if [ "${DEBUG}" ]; then printf '::debug:: %s\n' "$*" >&2; fi; }
+debug_user_log(){ if [ "${DEBUG}" ]; then printf '::debug:: %s\n' "$*" >&2; fi; }
+
+# Portable sh (e.g., FreeBSD /bin/sh) helper:
+# Masks the exact strings passed as arguments, using GitHub Actions logging command.
+# Usage: mask_inputs "$foo" "$bar"
+mask_user_inputs() {
+  # Nothing to do if no args
+  [ "$#" -eq 0 ] && return 0
+
+  # Guard against GitHub-hosted environment to keep from spraying logs
+  [ -n "${GITHUB_ACTIONS:-}" ] || return 0
+
+  # Iterate over all args; each is masked exactly as provided
+  while [ "$#" -gt 0 ]; do
+    str=$1;
+    # Skip empty strings to avoid accidental overbroad masking
+    if [ -n "$str" ]; then printf '%s\n' "::add-mask::$str"; fi ;
+    shift ;
+  done
+}
 
 # TODO: verify ANYVM_CREATE_CI_USER_FILE is a file that exists
-debug_sub_log "Preparing script to bridge hosts on Guest VM" ;
+debug_user_log "Preparing script to bridge hosts on Guest VM" ;
 CREATE_CI_USER_SCRIPT_PATH="$DATA_DIR/create_user_$$.sh"
 cp -vf "${ANYVM_CREATE_CI_USER_FILE}" "$CREATE_CI_USER_SCRIPT_PATH"
-debug_sub_log "=> Staged" & debug_sub_log "..=> Setting Permissions on staged script" ;
+debug_user_log "=> Staged" & debug_user_log "..=> Setting Permissions on staged script" ;
 chmod +x "$CREATE_CI_USER_SCRIPT_PATH"
 
-debug_sub_log "Ready to transfer \"${CREATE_CI_USER_SCRIPT_PATH}\" to Guest VM" ;
+debug_user_log "Ready to transfer \"${CREATE_CI_USER_SCRIPT_PATH}\" to Guest VM" ;
 
-# copy to guest VM
-if [ -f "${CREATE_CI_USER_SCRIPT_PATH}" ]; then
-  debug_sub_log "....=> Waiting for transfer" ;
-  scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$VM":/tmp/create_user.sh || printf '::warning:: %s\n' "failed to scp create_user.sh script"
-  debug_sub_log "..=> Transferred" & {rm -f "$CREATE_CI_USER_SCRIPT_PATH" 2>/dev/null || true ;} & debug_sub_log "..=> Waiting for user sync" &
-  # remote merge script: run on guest (idempotent-ish)
-  ssh $SSH_EPHEMERAL_OPTS -p ${VM_SSH_PORT:-22} root@"$VM" "sh /tmp/create_user.sh" || printf '::error:: %s\n' "warning: create_user.sh execution failed"
-  debug_sub_log "=> Synced"
+  debug_user_log "Generating VM User keys" ;
+  # TODO: don't use date (birthday-weakness)
+  ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -V -1m:+6h -C "${GUEST_USER:-ci}@users.noreply.github.com" >/dev/null || die "Failed to generate ephemeral user keys"
+  debug_user_log "Checking for new ephemeral user key pair"
+
+  if [ ! -f "$USER_KEY" ] || [ ! -f "$USER_KEY.pub" ]; then
+    debug_user_log "=> Can not find new ephemeral user keys"
+    printf '%s\n' "warning: ephemeral user key pair not found at $USER_KEY / $USER_KEY.pub; Configuring SSH steps WILL fail"
+  else
+    debug_user_log "=> Found new ephemeral user keys"
+    # TODO: check that found keys are indeed a pair
+    ssh-keygen -lf "$USER_KEY.pub"
+  fi
+
+  # ensure even the baked keys are masked from logs
+  { USER_KEY_CONTENT="$(cat $USER_KEY)";
+    mask_user_inputs "$USER_KEY_CONTENT";
+    unset USER_KEY_CONTENT ;
+    # "shred" the var
+    USER_KEY_CONTENT="<NULL>" ;
+    unset USER_KEY_CONTENT ;} 2>/dev/null >> /dev/null || printf '::warning:: %s\n' "Warning: Ephemeral VM key masking failed!"
+  USER_PUB_CONTENT="$(cat ${USER_KEY}.pub)"
+  mask_user_inputs "$USER_PUB_CONTENT";
+
+  debug_user_log "..=> Preparing script to rotate Guest VM CI User keys" ;
+  CLONE_USER_SCRIPT_PATH="$DATA_DIR/clone_user_$$.sh"
+  cp -vf "${ANYVM_ROTATE_UKEYS_FILE}" "$CLONE_USER_SCRIPT_PATH"
+  debug_user_log "..=> Staged" & debug_user_log "....=> Setting Permissions on staged script" ;
+  chmod +x "$CLONE_USER_SCRIPT_PATH"
+
+  debug_user_log "....=> Ready to transfer \"${CLONE_USER_SCRIPT_PATH}\" to Guest VM" ;
+
+  # 4d. copy rotation script and run it using baked key (best-effort)
+  if [ -f "$USER_KEY" ]; then
+    debug_user_log "....=> Waiting for transfer" ;
+
+    USER_PUB_TFILE=$(printf '%s\n' "$RANDOM$RANDOM$RANDOM$RANDOM" | openssl dgst -sha256 - | cut -d\= -f 2-2 | tr -d ' ' | head -n1)
+    mask_inputs "${USER_PUB_TFILE}";
+    scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "$CLONE_USER_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/create_user.sh || printf '::Error:: %s\n' "failed to scp create_user script"
+    scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "${USER_KEY}.pub" root@"$VM_SSH_HOST":/tmp/"${USER_PUB_TFILE}" || printf '::Error:: %s\n' "failed to scp create_user data"
+    debug_user_log "..=> Transferred" & {rm -f "$CREATE_CI_USER_SCRIPT_PATH" 2>/dev/null || true ;} & debug_user_log "..=> Waiting for user sync" &
+    ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${EPHEM_PUB_TFILE};" || printf '::Error:: %s\n' "warning: create_user execution failed" ;
+    unset USER_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
+    debug_user_log "..=> Synced"
 else
   printf '::warning:: %s\n' "/etc/hosts not found locally; nothing to do." >&2
-  debug_sub_log "Nothing transferred"
+  debug_user_log "Nothing transferred"
 fi
+
+  debug_user_log "=> Attempt to drop root access" &
+  SSH_EPHEMERAL_OPTS="";
+  unset SSH_EPHEMERAL_OPTS;
+  # TODO: deal with root keys more securely
+
+  debug_user_log "=> Will now try ephemeral user key pair"
+
+  SSH_EPHEMERAL_OPTS=$(build_sendenv_opts);
+  # verify ephemeral works (try a few times)
+  SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $USER_KEY -o ConnectTimeout=5"
+  u_ok=1
+  for _step in 1 2 3; do
+    if ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT -o BatchMode=yes ${VM_CI_USER}@"$VM_SSH_HOST" "echo OK" >/dev/null 2>&1; thenu_ok=0; break; fi
+    sleep ${_step:-1}
+  done
+  if [ $u_ok -ne 0 ]; then
+    printf '::Error:: %s\n' "warning: ephemeral key login failed; continuing with subsequent steps will fail"
+  else
+    debug_user_log "User and Keys successfully configured"
+  fi
 
 # best effort cleanup
 rm -f "$CREATE_CI_USER_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
 unset VM
 unset CREATE_CI_USER_SCRIPT_PATH
-unset debug_sub_log || true
+unset debug_user_log || true
+unset mask_user_inputs || true
 
 # done
 exit 0; # always exit 0

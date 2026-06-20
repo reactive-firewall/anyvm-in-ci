@@ -286,14 +286,6 @@ if [ ! -f "$BAKED_PRIV" ] || [ ! -f "$BAKED_PUB" ]; then
   printf '%s\n' "warning: baked key pair not found at $BAKED_PRIV / $BAKED_PUB; initial SSH steps WILL fail"
 fi
 
-# ensure even the baked keys are masked from logs
-{ BAKED_PRIV_CONTENT=$(cat <"$BAKED_PRIV");
-  mask_inputs "$BAKED_PRIV_CONTENT";
-  unset BAKED_PRIV_CONTENT ;
-  # "shred" the var
-  BAKED_PRIV_CONTENT="<NULL>" ;
-  unset BAKED_PRIV_CONTENT ;} 2>/dev/null || die "Warning: Baked VM key may be compromised"
-
 { BAKED_PUB_CONTENT=$(cat <"$BAKED_PUB");
   mask_inputs "$BAKED_PUB_CONTENT";
   unset BAKED_PRIV_CONTENT ;
@@ -375,13 +367,13 @@ else
   ssh-keygen -lf "$EPHEM_KEY.pub"
 fi
 
-# ensure even the baked keys are masked from logs
-{ EPHEM_KEY_CONTENT=$(cat <"$EPHEM_KEY");
+# ensure ephemeral key is masked from logs (treat as session key, very weak)
+{ EPHEM_KEY_CONTENT="$(cat $EPHEM_KEY)";
   mask_inputs "$EPHEM_KEY_CONTENT";
   unset EPHEM_KEY_CONTENT ;
   # "shred" the var
   EPHEM_KEY_CONTENT="<NULL>" ;
-  unset EPHEM_KEY_CONTENT ;} 2>/dev/null >> /dev/null || die "Warning: Ephemeral VM key masking failed!"
+  unset EPHEM_KEY_CONTENT ;} 2>/dev/null || die "Warning: Ephemeral VM key masking failed!"
 
 
 # compute expiry timestamp (store in comment or file if needed)
@@ -497,29 +489,15 @@ debug_log "Bridging done"
 # 4f. optionally create unprivileged user matching host and set its authorized_keys to its own ephemeral key
 if [ "$VM_USER_CREATE" = "true" ]; then
   GUEST_USER="$HOST_USER"
-  USER_EPHEM_DIR="$(mktemp -d)"
-  USER_KEY="$USER_EPHEM_DIR/id_user_ci_rsa"
-  ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -C "gha-user-ephemeral-$(date -u +%s)-ttl${GITHUB_TIMEOUT}s"
-  USER_PUB="$(cat ${USER_KEY}.pub)"
-
-  debug_log "Bridging CI user to guest"
+  USER_KEY="${HOME:-.}/id_user_ci_$(date -u +%s)_rsa"
+  # TODO: match the UID of GUEST_USER
+  debug_log "Cloning CI user to guest VM"
   if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-users.sh" ]; then
-    ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
+    USER_KEY="${USER_KEY}" GUEST_USER="${GUEST_USER}" ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
       "${ANYVM_UTIL_PATH_ARG}/bridge-users.sh"
   fi
-  # TODO: choose a consistant term: synced or cloned or bridged
+  # TODO: choose a consistent term: synced or cloned or bridged
   debug_log "CI user cloned to guest"
-
-  # copy over script and run it via ephemeral root key (if ephemeral root works) otherwise baked
-  if ssh $SSH_EPHEMERAL_OPTS -o BatchMode=yes root@"$VM_SSH_HOST" "true" >/dev/null 2>&1; then
-    scp -P "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$EPHEM_KEY" "$CREATE_USER_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/create_user.sh
-    ssh $SSH_EPHEMERAL_OPTS root@"$VM_SSH_HOST" "bash /tmp/create_user.sh '$(printf "%s" "$GUEST_USER")' '$(printf "%s" "$USER_PUB" | sed "s/'/'\\\\''/g")'"
-  elif [ -f "$BAKED_PRIV" ]; then
-    scp -P "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$BAKED_PRIV" "$CREATE_USER_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/create_user.sh
-    ssh $SSH_BOOT_OPTS root@"$VM_SSH_HOST" "bash /tmp/create_user.sh '$(printf "%s" "$GUEST_USER")' '$(printf "%s" "$USER_PUB" | sed "s/'/'\\\\''/g")'"
-  else
-    echo "warning: neither ephemeral nor baked root access available; cannot create user"
-  fi
 
   # set wrapper to use unpriv user key by default and use sudo for privileged ops
   WRAPPER="$DATA_DIR/${VMSH_CMD:-'ssh-to-vm.sh'}"
@@ -539,13 +517,8 @@ EOF
   chmod +x "$WRAPPER"
 fi
 
-# 5. push env_forward and set it on guest (place in /etc/profile.d or user's shell rc)
-# copy using ephemeral key if possible, else baked
-if ssh $SSH_EPHEMERAL_OPTS -o BatchMode=yes root@"$VM_SSH_HOST" "true" >/dev/null 2>&1; then
-  scp -P "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$EPHEM_KEY" "$ENV_SCRIPT_LOCAL" root@"$VM_SSH_HOST":/etc/profile.d/gha_env_forward.sh || true
-elif [ -f "$BAKED_PRIV" ]; then
-  scp $SSH_BOOT_OPTS "$ENV_SCRIPT_LOCAL" root@"$VM_SSH_HOST":/etc/profile.d/gha_env_forward.sh || true
-fi
+# TODO: HERE-MARK =============
+debug_log "Bootstrap done"
 
 # 6. recreate full GITHUB_WORKSPACE path and rsync content
 GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
