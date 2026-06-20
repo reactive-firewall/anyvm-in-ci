@@ -202,9 +202,8 @@ debug_log "qemu installed"
 # 2. fetch anyvm from github and use its anyvm.py
 download_file(){
   url=$1 dest=$2 tmp="${dest}.tmp.$$"
-  extra_headers="--no-keepalive -H 'Connection: close'"
   mkdir -p "$(dirname "$dest")" || true
-  if ! curl -L --fail --silent $extra_headers --show-error --output "$tmp" --write-out "%{http_code}" --url "$url" >"$tmp.httpcode"; then
+  if ! curl -L --fail --silent --show-error --output "$tmp" --write-out "%{http_code}" --url "$url" >"$tmp.httpcode"; then
     rm -f "$tmp" "$tmp.httpcode"; return 1
   fi
   code="$(cat "$tmp.httpcode" 2>/dev/null || echo "")"; rm -f "$tmp.httpcode"
