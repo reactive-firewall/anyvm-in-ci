@@ -1,4 +1,4 @@
-#! /bin/bash
+#! /bin/sh
 #
 # SPDX-License-Identifier: BSD-3-Clause OR MIT
 #
@@ -63,78 +63,101 @@
 #    even if the above stated remedy fails of its essential purpose.
 ################################################################################
 
-test -x "$(command -v scp)" || exit 126 ;
-set -eu
-
-# bridge-hosts.sh
-
-# CAUTION: WIP!
-
-# 6e. Merge host /etc/hosts into guest's /etc/hosts (best-effort, safer merge)
-# - preserves guest's essential localhost and virtualization entries
-# - adds host entries that don't conflict with guest localhost/virtualization
-# - preserves "blackhole" localhost-style entries from host (e.g. somehost -> 127.0.0.1 or ::1)
-#
-# Assumptions (reasonable defaults):
-# - VM ssh reachable as root@"$VM_SSH_HOST" on port $VM_SSH_PORT using key $EPHEM_KEY
-# - scp/ssh available locally and on guest
-#
-# Behavior summary:
-# 1) Copy host /etc/hosts to guest temporary file
-# 2) On guest, create a sanitized guest /etc/hosts snapshot of existing content,
-#    keeping lines that define canonical localhost and typical virtualization entries.
-# 3) Append host entries that do not conflict with the preserved guest localhost/virtualization names.
-# 4) Preserve host "blackhole" mappings (to 127.0.0.* or ::1) unless they would overwrite a preserved
-#    guest localhost/virtualization name.
-#
-# Note: Best-effort — if any command fails we continue (nonfatal), but critical failures are reported.
-
-# TODO: add check for SSH_EPHEMERAL_OPTS file or abort
-# TODO: verify ANYVM_BRIDGE_HOSTS_FILE is set or abort
-
-ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE:-}"
-SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS:-}";
-VM="${VM_SSH_HOST:-127.0.0.1}"
-VM_SSH_PORT="${VM_SSH_PORT:-22}"
+# default "safe" ENVs (albeit for ssh less is probably more secure)
+ENV_INPUTS="${INPUT_ENVS:-CI_REPO CI_COMMIT_SHA VCS_BRANCH_NAME}"
+ENV_INPUTS="$ENV_INPUTS PYTHONUTF8 PYTHONCOERCECLOCALE PYTHONDONTWRITEBYTECODE PYTHON_VERSION"
+ENV_INPUTS="$ENV_INPUTS GUEST_USER GUEST_UID"
 
 # helper: conditional diagnostic with message
-debug_sub_log(){ if [ "${DEBUG}" ]; then printf '::debug:: %s\n' "$*"; fi; }
+debug_wrapper_log(){ if [ "${DEBUG:-0}" -eq 1 ]; then printf '::debug::%s\n' "$*" ; fi; }
 
-# TODO: verify ANYVM_BRIDGE_HOSTS_FILE is a file that exists
-debug_sub_log "Preparing script to bridge hosts on Guest VM" ;
-BRIDGE_HOSTS_SCRIPT_PATH="$DATA_DIR/bridge_hosts_$$.sh"
-cp -vf "${ANYVM_BRIDGE_HOSTS_FILE}" "$BRIDGE_HOSTS_SCRIPT_PATH"
-debug_sub_log "=> Staged" & debug_sub_log "..=> Setting Permissions on staged script" ;
-chmod +x "$BRIDGE_HOSTS_SCRIPT_PATH"
+SAFE_GITHUB_LIST='GITHUB_ACTION GITHUB_ACTIONS GITHUB_WORKFLOW GITHUB_RUN_ID GITHUB_RUN_NUMBER GITHUB_JOB GITHUB_REPOSITORY GITHUB_REPOSITORY_OWNER GITHUB_REF GITHUB_SHA GITHUB_ACTOR'
 
-debug_sub_log "Ready to transfer \"${BRIDGE_HOSTS_SCRIPT_PATH}\" to Guest VM" ;
+# Usage: build_sendenv_opts [ENV_INPUTS]
+# Returns: prints ssh options like: -o SendEnv=VAR1 -o SendEnv=VAR2 ...
+build_sendenv_opts() {
+	sendenv_opts=
+	# helper: check if a variable name is present in the environment
+	env_has() {
+		# printf to avoid external env binary in very minimal shells; use 'env' if unavailable
+		# This implementation uses 'env' if present, otherwise falls back to /bin/printenv if available.
+		if command -v env >/dev/null 2>&1; then
+			env | awk -F= '{print $1}' | grep -x -- "$1" >/dev/null 2>&1
+		else
+			printenv 2>/dev/null | awk -F= '{print $1}' | grep -x -- "$1" >/dev/null 2>&1
+		fi
+	}
 
-debug_sub_log "=> Using runner /etc/hosts data to bridge hosts on Guest VM" ;
-BRIDGE_HOSTS_DATA_PATH="$DATA_DIR/hosts_$$.data"
+	for gv in $SAFE_GITHUB_LIST; do
+		if env_has "$gv"; then
+			sendenv_opts="$sendenv_opts -o SendEnv=$gv"
+		fi
+	done
 
-# copy host file to guest /tmp/hosts.from_host
-if [ -f /etc/hosts ]; then
-  cat <"/etc/hosts" >> "$BRIDGE_HOSTS_SCRIPT_PATH" ; # 'copy' but not permissions (by reading)
-  debug_sub_log "..=> Data Staged"
-  debug_sub_log "=> Ready to also transfer \"${BRIDGE_HOSTS_DATA_PATH}\" to Guest VM" ;
-  debug_sub_log "....=> Waiting for transfer" ;
-  scp $SSH_EPHEMERAL_OPTS -P ${VM_SSH_PORT:-22} "${BRIDGE_HOSTS_DATA_PATH}" root@"$VM":/tmp/hosts.from_host || printf '::warning:: %s\n' "failed to scp bridge-hosts data"
-  scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "$BRIDGE_HOSTS_SCRIPT_PATH" root@"$VM":/tmp/bridge-hosts.sh || printf '::warning:: %s\n' "failed to scp bridge-hosts script"
-  debug_sub_log "..=> Transferred" & {rm -f "$BRIDGE_HOSTS_DATA_PATH" 2>/dev/null || true ;} & debug_sub_log "..=> Waiting for bridging" &
-  # remote merge script: run on guest (idempotent-ish)
-  ssh $SSH_EPHEMERAL_OPTS -p ${VM_SSH_PORT:-22} root@"$VM" "sh /tmp/bridge-hosts.sh" || printf '::error:: %s\n' "warning: bridge-hosts execution failed"
-  debug_sub_log "=> Bridged"
-else
-  printf '::warning:: %s\n' "/etc/hosts not found locally; nothing to merge." >&2
-  debug_sub_log "Nothing transferred"
-fi
+	# second argument or ENV_INPUTS env var may provide extra names (space-separated)
+	ENV_INPUTS_ARG=${1:-$ENV_INPUTS}
+	if [ -n "$ENV_INPUTS_ARG" ]; then
+		for name in $ENV_INPUTS_ARG; do
+			# sanitize to [A-Za-z0-9_]
+			name_clean=$(printf '%s' "$name" | sed 's/[^A-Za-z0-9_]//g')
+			[ -z "$name_clean" ] && continue
+			if env_has "$name_clean"; then
+				sendenv_opts="$sendenv_opts -o SendEnv=$name_clean"
+			fi
+		done
+	fi
 
-# best effort cleanup
-rm -f "$BRIDGE_HOSTS_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
-unset VM
-unset BRIDGE_HOSTS_DATA_PATH
-unset BRIDGE_HOSTS_SCRIPT_PATH
-unset debug_sub_log || true
+	# Print result (caller can capture with var=$(build_sendenv_opts) or use eval)
+	printf '%s' "$sendenv_opts"
+}
 
-# done
-exit 0; # always exit 0
+SSH_EXIT_CODE=0
+# check that the USER_KEY is useable
+if [ -n "${USER_KEY:-}" ]; then
+	debug_wrapper_log "Checking for SSH Identity" ;
+	if [ -e "${USER_KEY}" ] || [ -f "${USER_KEY}.pub" ]; then
+		debug_wrapper_log "=> Found ${USER_KEY} on disk." ;
+		if [ -r "${USER_KEY}" ]; then
+			debug_wrapper_log "..=> Found ${USER_KEY}" ;
+		elif [ -f "${USER_KEY}" ] || [ -e "${USER_KEY}.pub" ]; then
+			debug_wrapper_log "..=> Found ${USER_KEY}.pub file." ;
+			debug_wrapper_log "....=> Trying to apply permission corrections" ;
+			# TODO: add -v if in debug mode
+			chmod 600 "${USER_KEY}" || SSH_EXIT_CODE=77 ;
+			if [ ${SSH_EXIT_CODE} -eq 0 ] && [ -r "${USER_KEY}" ]; then
+				debug_wrapper_log "......=> Fixed ${USER_KEY} keyfile" ;
+			else
+				debug_wrapper_log "....=> Applying corrections Unsuccessful" ;
+				SSH_EXIT_CODE=77 ;
+			fi ;
+		else
+			debug_wrapper_log "..=> Missing ${USER_KEY} keyfile" ;
+			SSH_EXIT_CODE=66 ;
+		fi ;
+	else
+		debug_wrapper_log "..=> Missing SSH Identity" ;
+		SSH_EXIT_CODE=66 ;
+	fi ;
+fi ;
+
+if [ SSH_EXIT_CODE -eq 0 ]; then
+	# Check working directory
+	GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
+	# Build SSH arguments
+	SSH_EPHEMERAL_USER_OPTS="" # reset each time to avoid mis-re-use
+	SSH_EPHEMERAL_USER_OPTS=$(build_sendenv_opts);
+	SSH_EPHEMERAL_USER_OPTS="$SSH_EPHEMERAL_USER_OPTS -o BatchMode=yes -o EscapeChar=none -e none -l ${GUEST_USER}"
+	# TODO: ephemerally cache new hosts via:
+	# -o UserKnownHostsFile=${ANYVM_SSH_KNOWN_HOSTS_PATH:-/dev/null}
+	SSH_EPHEMERAL_USER_OPTS="$SSH_EPHEMERAL_USER_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+	ssh $SSH_EPHEMERAL_USER_OPTS -p ${VM_SSH_PORT:-22} -i $USER_KEY "${GUEST_USER:-runner}@${VM_SSH_HOST:-}" "cd \"${GITHUB_WS}\"; $@"
+	SSH_EXIT_CODE=$?;
+fi ;
+
+#cleanup
+unset build_sendenv_opts
+unset ENV_INPUTS
+unset GITHUB_WS
+# reset each time to avoid mis-re-use
+unset SSH_EPHEMERAL_USER_OPTS
+exit ${SSH_EXIT_CODE:-255}
