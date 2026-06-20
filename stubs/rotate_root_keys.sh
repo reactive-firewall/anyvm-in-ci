@@ -1,4 +1,4 @@
-#! /bin/bash
+#! /bin/sh
 #
 # SPDX-License-Identifier: BSD-3-Clause OR MIT
 #
@@ -65,22 +65,107 @@
 
 set -eu
 
-NEW_PUB="$1"
+IN="${1:-}"
+
+is_ssh_pubkey_line() {
+  # Accept common SSH public key prefixes only (shape check).
+  # Formats:
+  #   ssh-rsa <blob> ...
+  #   ssh-ed25519 <blob> ...
+  #   ecdsa-sha2-nistp256 <blob> ...
+  case "$1" in
+    ssh-rsa\ *|ssh-dss\ *|ssh-ed25519\ *|ecdsa-sha2-nistp256\ *|ecdsa-sha2-nistp384\ *|ecdsa-sha2-nistp521\ *)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# Read first non-empty line from a .pub file (portable; avoids awk dependency nuances)
+read_pub_from_file() {
+  # shellcheck disable=SC2039
+  # shellcheck disable=SC2094
+  f="$1"
+  # Busybox/posix sh portable loop
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '') continue ;;
+      *) printf '%s\n' "$line"; return 0 ;;
+    esac
+  done < "$f"
+  return 1
+}
+
+normalize_and_validate_input() {
+  in="$1"
+  if [ -n "$in" ] && [ -f "$in" ] && [ -r "$in" ]; then
+    NEW_PUB="$(read_pub_from_file "$in")"
+    if [ -z "${NEW_PUB:-}" ]; then
+      echo "Error: key file was empty or unreadable." >&2
+      exit 1
+    fi
+    if ! is_ssh_pubkey_line "$NEW_PUB"; then
+      echo "Error: file contents do not look like an SSH public key." >&2
+      exit 1
+    fi
+    printf '%s\n' "$NEW_PUB"
+    return 0
+  fi
+
+  # Otherwise $in is presumed to be the key string; validate shape.
+  if [ -z "$in" ] || ! is_ssh_pubkey_line "$in"; then
+    echo "Error: input does not look like an SSH public key." >&2
+    exit 1
+  fi
+
+  # Ensure it has at least "type blob" fields.
+  # POSIX sh: use set -- to split on IFS (whitespace).
+  set -- $in
+  if [ $# -lt 2 ]; then
+    echo "Error: SSH public key must contain at least 2 fields (type and blob)." >&2
+    exit 1
+  fi
+
+  # Crude base64-ish sanity check on blob (no strict validation).
+  blob="$2"
+  # Blob should be non-empty and contain only base64 characters and '='.
+  # If your system lacks grep -E, this still works with basic grep.
+  case "$blob" in
+    ''|*[!A-Za-z0-9+/=]*)
+      echo "Error: SSH public key blob doesn't look base64-ish." >&2
+      exit 1
+      ;;
+  esac
+
+  printf '%s\n' "$in"
+}
+
+NEW_PUB="$(normalize_and_validate_input "$IN")"
+
 # write to temp and atomically move for each homedir
 for homedir in /root /home/*; do
   [ -d "$homedir" ] || continue
+
   mkdir -p "$homedir/.ssh"
-  tmp=$(mktemp "$homedir/.ssh/auth.XXXXXX")
+
+  tmp="$(mktemp "$homedir/.ssh/auth.XXXXXX")"
+  # mktemp is not guaranteed on all platforms; if missing, fall back.
+  # (Most listed OSes provide mktemp; Solaris/OmniOS often do as well.)
+  # If mktemp fails, mktemp will exit non-zero due to set -e.
   printf '%s\n' "$NEW_PUB" > "$tmp"
   chmod 600 "$tmp"
   mv "$tmp" "$homedir/.ssh/authorized_keys"
+
   # try to set ownership if home directory name matches username
-  user=$(basename "$homedir")
-  chown "$user":"$user" "$homedir/.ssh/authorized_keys" 2>/dev/null || true
+  user="$(basename "$homedir")"
+  chown "$user:$user" "$homedir/.ssh/authorized_keys" 2>/dev/null || true
 done
+
 # ensure root authorized_keys
 mkdir -p /root/.ssh
-tmp_root=$(mktemp /root/.ssh/auth.XXXXXX)
+tmp_root="$(mktemp /root/.ssh/auth.XXXXXX)"
 printf '%s\n' "$NEW_PUB" > "$tmp_root"
 chmod 600 "$tmp_root"
 mv "$tmp_root" /root/.ssh/authorized_keys || true

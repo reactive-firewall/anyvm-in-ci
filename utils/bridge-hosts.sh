@@ -92,13 +92,13 @@ set -eu
 # TODO: add check for SSH_EPHEMERAL_OPTS file or abort
 # TODO: verify ANYVM_BRIDGE_HOSTS_FILE is set or abort
 
-ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE}"
-SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS";
+ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE:-}"
+SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS:-}";
 VM="${VM_SSH_HOST:-127.0.0.1}"
 VM_SSH_PORT="${VM_SSH_PORT:-22}"
 
 # helper: conditional diagnostic with message
-debug_sub_log(){ if [ ${DEBUG} ]; then printf '::debug:: %s\n' "$*" >&2; fi; }
+debug_sub_log(){ if [ "${DEBUG}" ]; then printf '::debug:: %s\n' "$*" >&2; fi; }
 
 # TODO: verify ANYVM_BRIDGE_HOSTS_FILE is a file that exists
 debug_sub_log "Preparing script to bridge hosts on Guest VM" ;

@@ -119,6 +119,25 @@ matches(){
   esac
 }
 
+# Portable sh (e.g., FreeBSD /bin/sh) helper:
+# Masks the exact strings passed as arguments, using GitHub Actions logging command.
+# Usage: mask_inputs "$foo" "$bar"
+mask_inputs() {
+  # Nothing to do if no args
+  [ "$#" -eq 0 ] && return 0
+
+  # Guard against GitHub-hosted environment to keep from spraying logs
+  [ -n "${GITHUB_ACTIONS:-}" ] || return 0
+
+  # Iterate over all args; each is masked exactly as provided
+  while [ "$#" -gt 0 ]; do
+    str=$1
+    # Skip empty strings to avoid accidental overbroad masking
+    [ -n "$str" ] && printf '%s\n' "::add-mask::$str"
+    shift
+  done
+}
+
 # 0. minimal required tools
 required=(python3 curl git ssh scp ssh-keygen date mktemp chmod mkdir sed awk)
 for cmd in "${required[@]}"; do
@@ -157,9 +176,10 @@ install_qemu(){
       if command -v brew >/dev/null 2>&1; then
         HOMEBREW_GITHUB_API_TOKEN=${ANYVM_TOKEN:-${GH_TOKEN:-}} ;
         # TODO: set other hombrew vars like HOMEBREW_NO_ANALYTICS when cache mode is disabled
-        if [ ${DEBUG} ]; then HOMEBREW_VERBOSE=1; fi ;
+        # TODO: set other hombrew vars when cache mode is enabled (and configure GHA cache for brew)
+        if [ ${DEBUG} ]; then HOMEBREW_VERBOSE=1; else HOMEBREW_NO_ENV_HINTS=1; fi ;
         HOMEBREW_NO_INSECURE_REDIRECT=1;  # forbid redirects from secure HTTPS to insecure HTTP
-        brew install qemu ;
+        brew install qemu || die "failed to install qemu via homebrew" ;
         unset HOMEBREW_GITHUB_API_TOKEN ;
       else
         die "Homebrew required on macOS to install qemu"
@@ -182,8 +202,9 @@ debug_log "qemu installed"
 # 2. fetch anyvm from github and use its anyvm.py
 download_file(){
   url=$1 dest=$2 tmp="${dest}.tmp.$$"
+  extra_headers="--no-keepalive -H 'Connection: close'"
   mkdir -p "$(dirname "$dest")" || true
-  if ! curl -L --fail --silent --show-error --output "$tmp" --write-out "%{http_code}" --url "$url" >"$tmp.httpcode"; then
+  if ! curl -L --fail --silent $extra_headers --show-error --output "$tmp" --write-out "%{http_code}" --url "$url" >"$tmp.httpcode"; then
     rm -f "$tmp" "$tmp.httpcode"; return 1
   fi
   code="$(cat "$tmp.httpcode" 2>/dev/null || echo "")"; rm -f "$tmp.httpcode"
@@ -265,6 +286,22 @@ if [ ! -f "$BAKED_PRIV" ] || [ ! -f "$BAKED_PUB" ]; then
   printf '%s\n' "warning: baked key pair not found at $BAKED_PRIV / $BAKED_PUB; initial SSH steps WILL fail"
 fi
 
+# ensure even the baked keys are masked from logs
+{ BAKED_PRIV_CONTENT=$(cat <"$BAKED_PRIV");
+  mask_inputs "$BAKED_PRIV_CONTENT";
+  unset BAKED_PRIV_CONTENT ;
+  # "shred" the var
+  BAKED_PRIV_CONTENT="<NULL>" ;
+  unset BAKED_PRIV_CONTENT ;} 2>/dev/null || die "Warning: Baked VM key may be compromised"
+
+{ BAKED_PUB_CONTENT=$(cat <"$BAKED_PUB");
+  mask_inputs "$BAKED_PUB_CONTENT";
+  unset BAKED_PRIV_CONTENT ;
+  # "shred" the var
+  BAKED_PUB_CONTENT="<NULL>" ;
+  unset BAKED_PUB_CONTENT ;} 2>/dev/null || true ; # pub-key is only best effort
+
+
 #export IMAGE_PATH
 #printf '%s\n' "Image downloaded to $IMAGE_PATH"
 
@@ -338,7 +375,14 @@ else
   ssh-keygen -lf "$EPHEM_KEY.pub"
 fi
 
-# TODO: HEREMARK
+# ensure even the baked keys are masked from logs
+{ EPHEM_KEY_CONTENT=$(cat <"$EPHEM_KEY");
+  mask_inputs "$EPHEM_KEY_CONTENT";
+  unset EPHEM_KEY_CONTENT ;
+  # "shred" the var
+  EPHEM_KEY_CONTENT="<NULL>" ;
+  unset EPHEM_KEY_CONTENT ;} 2>/dev/null >> /dev/null || die "Warning: Ephemeral VM key masking failed!"
+
 
 # compute expiry timestamp (store in comment or file if needed)
 # EXP_TS=$(( $(date +%s) + "$GITHUB_TIMEOUT" ))
@@ -391,6 +435,7 @@ debug_log "..=> Defined" ;
 
 # 4c. rotation: replace all users' authorized_keys (root) with ephemeral pubkey — safer atomic replace
 EPHEM_PUB_CONTENT="$(cat ${EPHEM_KEY}.pub)"
+mask_inputs "$EPHEM_PUB_CONTENT";
 
 debug_log "..=> Preparing script to rotate Guest VM keys" ;
 ROTATE_ROOT_SCRIPT_PATH="$DATA_DIR/rotate_root_$$.sh"
@@ -406,9 +451,11 @@ if [ -f "$BAKED_PRIV" ]; then
   SSH_BAKED_OPTS="$SSH_BAKED_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $BAKED_PRIV"
   debug_log "......=> Waiting for transfer" ;
   scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "$ROTATE_ROOT_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/rotate_root.sh || die "failed to scp rotate_root script"
+  scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "${EPHEM_KEY}.pub" root@"$VM_SSH_HOST":/tmp/"${EPHEM_PUB_TFILE}" || die "failed to scp rotate_root data"
+
   # TODO: cleanup local script copy once transferred
-  debug_log "....=> Transferred" & debug_log "..=> Waiting for rotation" &
-  ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "sh /tmp/rotate_root.sh '$(printf "%s" "$EPHEM_PUB_CONTENT" | sed "s/'/'\\\\''/g")'" || die "warning: rotate_root execution failed"
+  debug_log "....=> Transferred" & debug_log "..=> Waiting for rotation" ;
+  ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "sh /tmp/rotate_root.sh /tmp/${EPHEM_PUB_TFILE};" || die "warning: rotate_root execution failed" ;
   debug_log "..=> Rotated"
 else
   die "warning: baked private key not available; cannot run remote rotation via baked key"
