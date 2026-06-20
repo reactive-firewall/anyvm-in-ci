@@ -177,8 +177,8 @@ install_qemu(){
         HOMEBREW_GITHUB_API_TOKEN=${ANYVM_TOKEN:-${GH_TOKEN:-}} ;
         # TODO: set other hombrew vars like HOMEBREW_NO_ANALYTICS when cache mode is disabled
         # TODO: set other hombrew vars when cache mode is enabled (and configure GHA cache for brew)
-        if [ ${DEBUG} ]; then HOMEBREW_VERBOSE=1; else HOMEBREW_NO_ENV_HINTS=1; fi ;
-        HOMEBREW_NO_INSECURE_REDIRECT=1;  # forbid redirects from secure HTTPS to insecure HTTP
+        if [ ${DEBUG} ]; then export HOMEBREW_VERBOSE=1; else export HOMEBREW_NO_ENV_HINTS=1; fi ;
+        export HOMEBREW_NO_INSECURE_REDIRECT=1;  # forbid redirects from secure HTTPS to insecure HTTP
         brew install qemu || die "failed to install qemu via homebrew" ;
         unset HOMEBREW_GITHUB_API_TOKEN ;
       else

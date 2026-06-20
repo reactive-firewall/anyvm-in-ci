@@ -145,25 +145,43 @@ normalize_and_validate_input() {
 
 USER_PUB="$(normalize_and_validate_input "$IN")"
 
-# create user: try useradd/useradd-alternate/adduser/pw
+# create user group (same name) + user: try useradd/useradd-alternate/adduser/pw
 if ! id "$USERNAME" >/dev/null 2>&1; then
+  # create group first (if missing)
+  if ! getent group "$USERNAME" >/dev/null 2>&1; then
+    if command -v groupadd >/dev/null 2>&1; then
+      groupadd "$USERNAME" || true
+    elif command -v addgroup >/dev/null 2>&1; then
+      addgroup "$USERNAME" || true
+    elif command -v pw >/dev/null 2>&1; then
+      pw groupadd "$USERNAME" || true
+    else
+      # fall back: best-effort, no-op if we can't create groups
+      true
+    fi
+  fi
+
+  # create user
   if command -v useradd >/dev/null 2>&1; then
-    useradd -m -s /bin/sh "$USERNAME" || true
+    useradd -m -g "$USERNAME" -s /bin/sh "$USERNAME" || true
   elif command -v adduser >/dev/null 2>&1; then
-    adduser -D -s /bin/sh "$USERNAME" || true
+    adduser -D -s /bin/sh --ingroup "$USERNAME" "$USERNAME" || true
   elif command -v pw >/dev/null 2>&1; then
-    pw useradd -n "$USERNAME" -m -s /bin/sh || true
+    # FreeBSD: set default group (-g) to the new group
+    pw useradd -n "$USERNAME" -m -s /bin/sh -g "$USERNAME" || true
   fi
 fi
+
 mkdir -p /home/"$USERNAME"/.ssh
 printf '%s\n' "$USER_PUB" > /home/"$USERNAME"/.ssh/authorized_keys
 chmod 600 /home/"$USERNAME"/.ssh/authorized_keys
 chown -R "$USERNAME":"$USERNAME" /home/"$USERNAME"/.ssh || true
 
-unset USER_PUB 2>/dev/null || true;
+unset USER_PUB 2>/dev/null || true
 
-# FreeBSD wheel handling
+# Ensure FreeBSD wheel handling + group membership (default group + supplementary)
 if command -v pw >/dev/null 2>&1; then
-  pw usermod "$USERNAME" -G wheel || true
+  pw usermod "$USERNAME" -g "$USERNAME" -G wheel,"$USERNAME" || true
 fi
+
 printf '%s\n' "CI user synced to VM"
