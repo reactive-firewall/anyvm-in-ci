@@ -541,7 +541,7 @@ debug_log "Bridging done"
 
 # 4f. optionally create unprivileged user matching host and set its authorized_keys to its own ephemeral key
 if [ "$VM_USER_CREATE" = "true" ]; then
-	GUEST_USER="$HOST_USER"
+	GUEST_USER="${HOST_USER:-runner}"
 	USER_KEY="${HOME:-.}/id_user_ci_$(date -u +%s)_rsa"
 	# TODO: match the UID of GUEST_USER
 	debug_log "Cloning CI user to guest VM"
@@ -583,11 +583,11 @@ debug_log "Bootstrap done"
 
 # 6. recreate full GITHUB_WORKSPACE path and rsync content
 GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
-GUEST_RSYNC_USER="${GUEST_USER:-CI}"
+GUEST_RSYNC_USER="${GUEST_USER:-runner}"
 RSYNC_KEY="${USER_KEY:-$EPHEM_KEY}"
 
 # ensure destination exists and owned by guest user if present
-ssh ${SSH_EPHEMERAL_OPTS} -p $VM_SSH_PORT root@${VM_SSH_HOST} "mkdir -p '$DEST_WS' && chown -R '${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER}' '$DEST_WS'" || true
+ssh ${SSH_EPHEMERAL_OPTS} -p $VM_SSH_PORT root@${VM_SSH_HOST} "mkdir -p '$GITHUB_WS' && chown -R '${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER}' '$GITHUB_WS'" || true
 
 if [ "$SYNC_METHOD" = "rsync" ]; then
 	rsync -a --delete -e "ssh -p $VM_SSH_PORT -i ${RSYNC_KEY} -o BatchMode=yes -o EscapeChar=none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" "$GITHUB_WS/" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
