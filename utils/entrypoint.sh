@@ -131,10 +131,10 @@ mask_inputs() {
 
   # Iterate over all args; each is masked exactly as provided
   while [ "$#" -gt 0 ]; do
-    str=$1
+    str=$1;
     # Skip empty strings to avoid accidental overbroad masking
-    [ -n "$str" ] && printf '%s\n' "::add-mask::$str"
-    shift
+    if [ -n "$str" ]; then printf '%s\n' "::add-mask::$str"; fi ;
+    shift ;
   done
 }
 
@@ -217,6 +217,7 @@ mkdir -p "$DATA_DIR/images"
 # TODO: carefully resolve relative path to a canonical path
 ANYVM_ROTATE_RKEYS_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/rotate_root_keys.sh" ;
 ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/bridge-hosts-stub.sh" ;
+ANYVM_CREATE_CI_USER_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/create_user.sh" ;
 
 debug_log "Ensure we have anyvm.py"
 # Download anyvm.py (kept)
@@ -457,7 +458,7 @@ if [ -f "$BAKED_PRIV" ]; then
   # TODO: cleanup local script copy once transferred
   debug_log "....=> Transferred" & debug_log "..=> Waiting for rotation" ;
   ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "sh /tmp/rotate_root.sh /tmp/${EPHEM_PUB_TFILE};" || die "warning: rotate_root execution failed" ;
-  unset EPHEM_PUB_TFILE ; # TODO: keep this var until /tmp is cleanedup on guest VM too
+  unset EPHEM_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
   debug_log "..=> Rotated"
 else
   die "warning: baked private key not available; cannot run remote rotation via baked key"
@@ -500,34 +501,14 @@ if [ "$VM_USER_CREATE" = "true" ]; then
   USER_KEY="$USER_EPHEM_DIR/id_user_ci_rsa"
   ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -C "gha-user-ephemeral-$(date -u +%s)-ttl${GITHUB_TIMEOUT}s"
   USER_PUB="$(cat ${USER_KEY}.pub)"
-  CREATE_USER_SCRIPT_PATH="$DATA_DIR/create_user_$$.sh"
-  cat > "$CREATE_USER_SCRIPT_PATH" <<'CRUSER'
-#!/usr/bin/env bash
-set -eu
-USERNAME="$1"
-USER_PUB="$2"
-# create user: try useradd/useradd-alternate/adduser/pw
-if ! id "$USERNAME" >/dev/null 2>&1; then
-  if command -v useradd >/dev/null 2>&1; then
-    useradd -m -s /bin/sh "$USERNAME" || true
-  elif command -v adduser >/dev/null 2>&1; then
-    adduser -D -s /bin/sh "$USERNAME" || true
-  elif command -v pw >/dev/null 2>&1; then
-    pw useradd -n "$USERNAME" -m -s /bin/sh || true
-  fi
-fi
-mkdir -p /home/"$USERNAME"/.ssh
-printf '%s\n' "$USER_PUB" > /home/"$USERNAME"/.ssh/authorized_keys
-chmod 600 /home/"$USERNAME"/.ssh/authorized_keys
-chown -R "$USERNAME":"$USERNAME" /home/"$USERNAME"/.ssh || true
-# FreeBSD wheel handling
-if command -v pw >/dev/null 2>&1; then
-  pw usermod "$USERNAME" -G wheel || true
-fi
-echo "done"
-CRUSER
 
-  chmod +x "$CREATE_USER_SCRIPT_PATH"
+  debug_log "Bridging CI user to guest"
+  if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-users.sh" ]; then
+    ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
+      "${ANYVM_UTIL_PATH_ARG}/bridge-users.sh"
+  fi
+  # TODO: choose a consistant term: synced or cloned or bridged
+  debug_log "CI user cloned to guest"
 
   # copy over script and run it via ephemeral root key (if ephemeral root works) otherwise baked
   if ssh $SSH_EPHEMERAL_OPTS -o BatchMode=yes root@"$VM_SSH_HOST" "true" >/dev/null 2>&1; then
@@ -541,18 +522,19 @@ CRUSER
   fi
 
   # set wrapper to use unpriv user key by default and use sudo for privileged ops
-  WRAPPER="$DATA_DIR/ssh-to-vm.sh"
+  WRAPPER="$DATA_DIR/${VMSH_CMD:-'ssh-to-vm.sh'}"
+  SSH_EPHEMERAL_USER_OPTS=$(build_sendenv_opts);
   cat > "$WRAPPER" <<EOF
 #!/usr/bin/env bash
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $USER_KEY "${GUEST_USER}@${VM_SSH_HOST}" "\$@"
+ssh $SSH_EPHEMERAL_USER_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $USER_KEY "${GUEST_USER}@${VM_SSH_HOST}" "\$@"
 EOF
   chmod +x "$WRAPPER"
 else
   # wrapper uses root ephemeral key
-  WRAPPER="$DATA_DIR/ssh-to-vm.sh"
+  WRAPPER="$DATA_DIR/${VMSH_CMD:-'ssh-to-vm.sh'}"
   cat > "$WRAPPER" <<EOF
 #!/usr/bin/env bash
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $VM_SSH_PORT -i $EPHEM_KEY "root@${VM_SSH_HOST}" "\$@"
+ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT "root@${VM_SSH_HOST}" "\$@"
 EOF
   chmod +x "$WRAPPER"
 fi

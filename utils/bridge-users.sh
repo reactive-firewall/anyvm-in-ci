@@ -66,7 +66,7 @@
 test -x "$(command -v scp)" || exit 126 ;
 set -eu
 
-# bridge-hosts.sh
+# create_user.sh
 
 # CAUTION: WIP!
 
@@ -90,9 +90,9 @@ set -eu
 # Note: Best-effort — if any command fails we continue (nonfatal), but critical failures are reported.
 
 # TODO: add check for SSH_EPHEMERAL_OPTS file or abort
-# TODO: verify ANYVM_BRIDGE_HOSTS_FILE is set or abort
+# TODO: verify ANYVM_CREATE_CI_USER_FILE is set or abort
 
-ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE:-}"
+ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE:-}"
 SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS:-}";
 VM="${VM_SSH_HOST:-127.0.0.1}"
 VM_SSH_PORT="${VM_SSH_PORT:-22}"
@@ -100,40 +100,32 @@ VM_SSH_PORT="${VM_SSH_PORT:-22}"
 # helper: conditional diagnostic with message
 debug_sub_log(){ if [ "${DEBUG}" ]; then printf '::debug:: %s\n' "$*" >&2; fi; }
 
-# TODO: verify ANYVM_BRIDGE_HOSTS_FILE is a file that exists
+# TODO: verify ANYVM_CREATE_CI_USER_FILE is a file that exists
 debug_sub_log "Preparing script to bridge hosts on Guest VM" ;
-BRIDGE_HOSTS_SCRIPT_PATH="$DATA_DIR/bridge_hosts_$$.sh"
-cp -vf "${ANYVM_BRIDGE_HOSTS_FILE}" "$BRIDGE_HOSTS_SCRIPT_PATH"
+CREATE_CI_USER_SCRIPT_PATH="$DATA_DIR/create_user_$$.sh"
+cp -vf "${ANYVM_CREATE_CI_USER_FILE}" "$CREATE_CI_USER_SCRIPT_PATH"
 debug_sub_log "=> Staged" & debug_sub_log "..=> Setting Permissions on staged script" ;
-chmod +x "$BRIDGE_HOSTS_SCRIPT_PATH"
+chmod +x "$CREATE_CI_USER_SCRIPT_PATH"
 
-debug_sub_log "Ready to transfer \"${BRIDGE_HOSTS_SCRIPT_PATH}\" to Guest VM" ;
+debug_sub_log "Ready to transfer \"${CREATE_CI_USER_SCRIPT_PATH}\" to Guest VM" ;
 
-debug_sub_log "=> Using runner /etc/hosts data to bridge hosts on Guest VM" ;
-BRIDGE_HOSTS_DATA_PATH="$DATA_DIR/hosts_$$.data"
-
-# copy host file to guest /tmp/hosts.from_host
-if [ -f /etc/hosts ]; then
-  cat <"/etc/hosts" >> "$BRIDGE_HOSTS_SCRIPT_PATH" ; # 'copy' but not permissions (by reading)
-  debug_sub_log "..=> Data Staged"
-  debug_sub_log "=> Ready to also transfer \"${BRIDGE_HOSTS_DATA_PATH}\" to Guest VM" ;
+# copy to guest VM
+if [ -f "${CREATE_CI_USER_SCRIPT_PATH}" ]; then
   debug_sub_log "....=> Waiting for transfer" ;
-  scp $SSH_EPHEMERAL_OPTS -P ${VM_SSH_PORT:-22} "${BRIDGE_HOSTS_DATA_PATH}" root@"$VM":/tmp/hosts.from_host || printf '::warning:: %s\n' "failed to scp bridge-hosts data"
-  scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "$BRIDGE_HOSTS_SCRIPT_PATH" root@"$VM":/tmp/bridge-hosts.sh || printf '::warning:: %s\n' "failed to scp bridge-hosts script"
-  debug_sub_log "..=> Transferred" & {rm -f "$BRIDGE_HOSTS_DATA_PATH" 2>/dev/null || true ;} & debug_sub_log "..=> Waiting for bridging" &
+  scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$VM":/tmp/create_user.sh || printf '::warning:: %s\n' "failed to scp create_user.sh script"
+  debug_sub_log "..=> Transferred" & {rm -f "$CREATE_CI_USER_SCRIPT_PATH" 2>/dev/null || true ;} & debug_sub_log "..=> Waiting for user sync" &
   # remote merge script: run on guest (idempotent-ish)
-  ssh $SSH_EPHEMERAL_OPTS -p ${VM_SSH_PORT:-22} root@"$VM" "sh /tmp/bridge-hosts.sh" || printf '::error:: %s\n' "warning: bridge-hosts execution failed"
-  debug_sub_log "=> Bridged"
+  ssh $SSH_EPHEMERAL_OPTS -p ${VM_SSH_PORT:-22} root@"$VM" "sh /tmp/create_user.sh" || printf '::error:: %s\n' "warning: create_user.sh execution failed"
+  debug_sub_log "=> Synced"
 else
-  printf '::warning:: %s\n' "/etc/hosts not found locally; nothing to merge." >&2
+  printf '::warning:: %s\n' "/etc/hosts not found locally; nothing to do." >&2
   debug_sub_log "Nothing transferred"
 fi
 
 # best effort cleanup
-rm -f "$BRIDGE_HOSTS_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
+rm -f "$CREATE_CI_USER_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
 unset VM
-unset BRIDGE_HOSTS_DATA_PATH
-unset BRIDGE_HOSTS_SCRIPT_PATH
+unset CREATE_CI_USER_SCRIPT_PATH
 unset debug_sub_log || true
 
 # done
