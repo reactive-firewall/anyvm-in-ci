@@ -11,20 +11,20 @@ inputs:
     default: 'freebsd'
     type: choice
     options:
-     - freebsd
-     - ghostbsd
-     - openbsd
-     - netbsd
-     - dragonflybsd
-     - midnightbsd
-     - solaris
-     - omnios
-     - openindiana
-     - openindiana
-     - tribblix
-     - haiku
-     - ubuntu
-     - blissos
+      - freebsd
+      - ghostbsd
+      - openbsd
+      - netbsd
+      - dragonflybsd
+      - midnightbsd
+      - solaris
+      - omnios
+      - openindiana
+      - openindiana
+      - tribblix
+      - haiku
+      - ubuntu
+      - blissos
   prepare:
     description: "Pre-run block to set up the VM before run (shell commands)"
     required: false
@@ -60,24 +60,24 @@ inputs:
     # see https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories
     type: number
     options:
-     - 1024
-     - 2048
-     - 3072
-     - 4096  # limit of ubuntu-slim hosts
-     - 6144  # limit of macOS-{26,latest} hosts
-     - 8192
-     - 10240  # 10 GiB
-     - 12288  # 12 GiB
-     - 14336  # limit of macOS-*-intel hosts
-     - 16384  # limit of ubuntu-2* hosts
-     - 24576  # TODO: requires enabling 10 GB of host swap or detect large/custom runner
-     - 32768  # TODO: requires enabling 30 GB of host swap or detect large/custom runner
-     - 49152  # TODO: requires enabling 32 GB of host swap or detect large/custom runner
-     - 65536  # TODO: requires enabling 64 GB of host swap or detect large/custom runner
-     - 98304  # TODO: requires enabling 96 GB of host swap or detect large/custom runner
-     - 131072  # TODO: requires enabling 128 GB of host swap AND detect large runner
+      - 1024
+      - 2048
+      - 3072
+      - 4096  # limit of ubuntu-slim hosts
+      - 6144  # limit of macOS-{26,latest} hosts
+      - 8192
+      - 10240  # 10 GiB
+      - 12288  # 12 GiB
+      - 14336  # limit of macOS-*-intel hosts
+      - 16384  # limit of ubuntu-2* hosts
+      - 24576  # TODO: requires enabling 10 GB of host swap or detect large/custom runner
+      - 32768  # TODO: requires enabling 30 GB of host swap or detect large/custom runner
+      - 49152  # TODO: requires enabling 32 GB of host swap or detect large/custom runner
+      - 65536  # TODO: requires enabling 64 GB of host swap or detect large/custom runner
+      - 98304  # TODO: requires enabling 96 GB of host swap or detect large/custom runner
+      - 131072  # TODO: requires enabling 128 GB of host swap AND detect large runner
     required: true
-    default: 6144
+    default: 3072
   cpu:
     description: "Number of CPU cores for the VM"
     type: number
