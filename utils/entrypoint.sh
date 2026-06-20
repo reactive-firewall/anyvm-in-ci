@@ -139,7 +139,7 @@ mask_inputs() {
 }
 
 # 0. minimal required tools
-required=(python3 curl git ssh scp ssh-keygen date mktemp chmod mkdir sed awk)
+required=(python3 curl cut git openssl ssh scp ssh-keygen tr date mktemp chmod mkdir sed awk)
 for cmd in "${required[@]}"; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     die "required command not found: $cmd"
@@ -449,12 +449,15 @@ if [ -f "$BAKED_PRIV" ]; then
   SSH_BAKED_OPTS=$(build_sendenv_opts);
   SSH_BAKED_OPTS="$SSH_BAKED_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $BAKED_PRIV"
   debug_log "......=> Waiting for transfer" ;
+  EPHEM_PUB_TFILE=$(printf '%s\n' "$RANDOM$RANDOM$RANDOM$RANDOM" | openssl dgst -sha256 - | cut -d\= -f 2-2 | tr -d ' ' | head -n1)
+  mask_inputs "${EPHEM_PUB_TFILE}";
   scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "$ROTATE_ROOT_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/rotate_root.sh || die "failed to scp rotate_root script"
   scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "${EPHEM_KEY}.pub" root@"$VM_SSH_HOST":/tmp/"${EPHEM_PUB_TFILE}" || die "failed to scp rotate_root data"
 
   # TODO: cleanup local script copy once transferred
   debug_log "....=> Transferred" & debug_log "..=> Waiting for rotation" ;
   ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "sh /tmp/rotate_root.sh /tmp/${EPHEM_PUB_TFILE};" || die "warning: rotate_root execution failed" ;
+  unset EPHEM_PUB_TFILE ; # TODO: keep this var until /tmp is cleanedup on guest VM too
   debug_log "..=> Rotated"
 else
   die "warning: baked private key not available; cannot run remote rotation via baked key"
