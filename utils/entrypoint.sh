@@ -367,15 +367,6 @@ else
   ssh-keygen -lf "$EPHEM_KEY.pub"
 fi
 
-# ensure ephemeral key is masked from logs (treat as session key, very weak)
-{ EPHEM_KEY_CONTENT="$(cat $EPHEM_KEY)";
-  mask_inputs "$EPHEM_KEY_CONTENT";
-  unset EPHEM_KEY_CONTENT ;
-  # "shred" the var
-  EPHEM_KEY_CONTENT="<NULL>" ;
-  unset EPHEM_KEY_CONTENT ;} 2>/dev/null || die "Warning: Ephemeral VM key masking failed!"
-
-
 # compute expiry timestamp (store in comment or file if needed)
 # EXP_TS=$(( $(date +%s) + "$GITHUB_TIMEOUT" ))
 
@@ -523,40 +514,38 @@ debug_log "Bootstrap done"
 # 6. recreate full GITHUB_WORKSPACE path and rsync content
 GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
 DEST_WS="$GITHUB_WS"
-GUEST_RSYNC_USER="${GUEST_USER:-root}"
+GUEST_RSYNC_USER="${GUEST_USER:-CI}"
 RSYNC_KEY="${USER_KEY:-$EPHEM_KEY}"
 
 # ensure destination exists and owned by guest user if present
-ssh ${SSH_BOOT_OPTS} root@${VM_SSH_HOST} "mkdir -p '$DEST_WS' && chown -R '${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER}' '$DEST_WS'" || true
+ssh ${SSH_EPHEMERAL_OPTS} -p $VM_SSH_PORT root@${VM_SSH_HOST} "mkdir -p '$DEST_WS' && chown -R '${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER}' '$DEST_WS'" || true
 
 if [ "$SYNC_METHOD" = "rsync" ]; then
   rsync -a --delete -e "ssh -p $VM_SSH_PORT -i ${RSYNC_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" "$GITHUB_WS/" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
 else
   # Use trailing slash and /* glob to copy contents, not the directory itself
-  scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$GITHUB_WS"/* "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$DEST_WS/"
+  scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" $SSH_EPHEMERAL_OPTS "$GITHUB_WS"/* "root@${VM_SSH_HOST}:$DEST_WS/"
+  ssh ${SSH_EPHEMERAL_OPTS} -p $VM_SSH_PORT root@${VM_SSH_HOST} "chown -R '${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER}' '$DEST_WS'" || true
 fi
 
 # 7. run startup hook if exists
-ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "cd '$DEST_WS' && [ -x ./startup.sh ] && ./startup.sh || true" || true
+"$WRAPPER" "cd '$DEST_WS' && [ -x ./startup.sh ] && ./startup.sh || true" || true
 
 # 8. run 'prepare' if provided
 if [ -n "${INPUT_PREPARE:-}" ]; then
-  ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "cd '$DEST_WS' && $INPUT_PREPARE"
+  "$WRAPPER" "cd '$DEST_WS' && $INPUT_PREPARE"
 fi
 
 # 9. run CI command (required)
 if [ -n "${INPUT_RUN:-}" ]; then
-  ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "cd '$DEST_WS' && $INPUT_RUN"
+  "$WRAPPER" "cd '$DEST_WS' && $INPUT_RUN"
 fi
 
-# 10. optional copyback
-if [ "$COPYBACK" = "true" ]; then
-  rsync -a -e "ssh -p $VM_SSH_PORT -i ${RSYNC_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" ${GUEST_RSYNC_USER}@${VM_SSH_HOST}:"${DEST_WS}/" "$GITHUB_WS/ci-copyback/" || true
-fi
+# 10. TODO: optional copyback logic
 
 # 10b afterwards
 if [ -n "${INPUT_AFTERWARDS:-}" ]; then
-  ssh -i "$RSYNC_KEY" -p "$VM_SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${GUEST_RSYNC_USER}@${VM_SSH_HOST} "cd '$DEST_WS' && $INPUT_AFTERWARDS"
+  "$WRAPPER" "cd '$DEST_WS' && $INPUT_AFTERWARDS"
 fi
 
 # 11. stop VM and cleanup
@@ -572,7 +561,5 @@ else
   rm -f "${EPHEM_KEY}"
   [ -n "${USER_KEY:-}" ] && rm -f "${USER_KEY}"
 fi
-rm -rf "$EPHEM_DIR" "$ROTATE_ROOT_SCRIPT_PATH" || true
-[ -n "${USER_EPHEM_DIR:-}" ] && rm -rf "$USER_EPHEM_DIR" || true
-[ -n "${CREATE_USER_SCRIPT_PATH:-}" ] && rm -f "$CREATE_USER_SCRIPT_PATH" || true
+[ -n "${ROTATE_ROOT_SCRIPT_PATH:-}" ] && rm -f "$ROTATE_ROOT_SCRIPT_PATH" || true
 echo "done"
