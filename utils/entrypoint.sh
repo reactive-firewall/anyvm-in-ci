@@ -179,6 +179,7 @@ mask_inputs() {
 debug_log "=> Defining GitHub QEMU installer function" &
 
 install_qemu(){
+	printf "::group::%s\n" "Setup-QEMU" ;
 	if command -v qemu-system-x86_64 >/dev/null 2>&1; then
 		printf '%s\n' "qemu present"
 		return
@@ -219,6 +220,7 @@ install_qemu(){
 			die "Unsupported runner OS"
 			;;
 	esac
+	printf "::endgroup::\n" ;
 }
 
 debug_log "=> Defining download function" &
@@ -444,6 +446,7 @@ START_ARGS+=(--ssh-port "${VM_SSH_PORT}")
 # TODO: make this more flexible via overrides and relative default
 # HEURISTIC abort after 1/100th (1%) of step max timeout
 # --boot-timeout-sec ( (($GITHUB_TIMEOUT * 60) / 100) )
+printf "::group::%s\n" "Start-ANYVM" ;
 
 debug_log "Starting ANYVM with args: ${START_ARGS[@]}" ;
 
@@ -455,6 +458,8 @@ debug_log "=> Waiting for Guest VM to become available"
 wait_for_ssh "$VM_SSH_HOST" "$VM_SSH_PORT" 360 || die "SSH did not become available on $VM_SSH_HOST:$VM_SSH_PORT"
 
 debug_log "Guest VM became available (on $VM_SSH_HOST:$VM_SSH_PORT)" ;
+
+printf "::endgroup::\n";
 
 debug_log "Refreshing VM keys" ;
 # 4. RSA-3072 ephemeral key generation with expiry comment
@@ -602,19 +607,25 @@ fi
 
 # 8. run 'prepare' if provided
 if [ -n "${INPUT_PREPARE:-}" ]; then
+	printf "::group::%s\n" "Run prepare" ;
 	"$VMSH_CMD" "$INPUT_PREPARE" ;
+	printf "\n::endgroup::\n" ;
 fi
 
 # 9. run CI command (required)
 if [ -n "${INPUT_RUN:-}" ]; then
+	printf "::group::%s\n" "Run step on VM" ;
 	"$VMSH_CMD" "$INPUT_RUN" ;
+	printf "\n::endgroup::\n" ;
 fi
 
 # 10. TODO: optional copyback logic
 
 # 10b afterwards
 if [ -n "${INPUT_AFTERWARDS:-}" ]; then
+	printf "::group::%s\n" "Run afterwards" ;
 	"$VMSH_CMD" "$INPUT_AFTERWARDS" ;
+	printf "\n::endgroup::\n" ;
 fi
 
 # 11. stop VM and cleanup
@@ -633,4 +644,4 @@ fi
 [ -n "${ROTATE_ROOT_SCRIPT_PATH:-}" ] && rm -f "$ROTATE_ROOT_SCRIPT_PATH" || true
 
 # MARK: END
-echo "done"
+printf "Done\n" ;

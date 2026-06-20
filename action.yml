@@ -143,8 +143,8 @@ runs:
         RUNNER_ARCH: ${{ runner.arch }}
         RUNNER_DEBUG: ${{ runner.debug }}
       run: |
-        set -euo pipefail
         # Map documented GitHub runner.arch values to canonical guest_arch
+        set -euo pipefail
         case "${RUNNER_ARCH:-}" in
           x86|X86|x64|X64)
             chosen="x86_64"
@@ -167,6 +167,7 @@ runs:
       id: detect_cpus
       shell: bash
       run: |
+        # Map GitHub runner OS values to canonical guest osname
         case "$(uname -s 2>/dev/null || echo Windows)" in
           Linux|Darwin)
             cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || printf "%i\n" 1)
@@ -236,9 +237,11 @@ runs:
         RUNNER_DEBUG: ${{ runner.debug }}
       run: |
         # Reap VM
+        printf "::group::%s\n" "Reaping" ;
         if [ "${RUNNER_DEBUG:-}" = "1" ]; then printf "::debug:: %s\n" "Looking for '${ANYVM_ACTION_PATH}'" ; fi ;
         if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ] ; then
           sudo "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ;
         else
           "utils/stop-qemu-vm-safe.sh" || exit 1 ;
         fi ;
+        printf "::endgroup::\n" ;
