@@ -604,8 +604,8 @@ if matches "$SYNC_METHOD" "rsync"; then
 	rsync -a --delete -e "ssh -p $VM_SSH_PORT -i ${RSYNC_KEY} -o BatchMode=yes -o EscapeChar=none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" "$GITHUB_WS/" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$GITHUB_WS/"
 else
 	# Use trailing slash and /* glob to copy contents, not the directory itself
-	scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" $SSH_EPHEMERAL_OPTS "$GITHUB_WS"/* "root@${VM_SSH_HOST}:$DEST_WS/"
-	ssh ${SSH_EPHEMERAL_OPTS} -p $VM_SSH_PORT root@${VM_SSH_HOST} "chown -R '${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER}' '$DEST_WS'" || true
+	scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" $SSH_EPHEMERAL_OPTS "$GITHUB_WS"/* "root@${VM_SSH_HOST}:$GITHUB_WS/"
+	ssh ${SSH_EPHEMERAL_OPTS} -p $VM_SSH_PORT root@${VM_SSH_HOST} "chown -R '${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER}' '$GITHUB_WS'" || true
 fi
 
 # 7. run startup hook if exists

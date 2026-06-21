@@ -96,7 +96,7 @@ ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE:-}"
 SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS:-}";
 VM="${VM_SSH_HOST:-127.0.0.1}"
 VM_SSH_PORT="${VM_SSH_PORT:-22}"
-VM_CI_USER="${GUEST_USER:-CI}"
+VM_CI_USER="${GUEST_USER:-runner}"
 USER_KEY="${USER_KEY:-}"
 
 # helper: conditional diagnostic with message
@@ -122,7 +122,7 @@ mask_user_inputs() {
 }
 
 # TODO: verify ANYVM_CREATE_CI_USER_FILE is a file that exists
-debug_user_log "Preparing script to bridge hosts on Guest VM" ;
+debug_user_log "Preparing script to clone user on to Guest VM" ;
 CREATE_CI_USER_SCRIPT_PATH="$DATA_DIR/create_user_$$.sh"
 cp -vf "${ANYVM_CREATE_CI_USER_FILE}" "$CREATE_CI_USER_SCRIPT_PATH"
 debug_user_log "=> Staged" & debug_user_log "..=> Setting Permissions on staged script" ;
@@ -191,7 +191,7 @@ fi
   SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $USER_KEY -o ConnectTimeout=5"
   u_ok=1
   for _step in 1 2 3; do
-    if ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT -o BatchMode=yes ${VM_CI_USER}@"$VM_SSH_HOST" "echo OK" >/dev/null 2>&1; thenu_ok=0; break; fi
+    if ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT -o BatchMode=yes ${VM_CI_USER}@"$VM_SSH_HOST" "echo OK" >/dev/null 2>&1; then u_ok=0; break; fi
     sleep ${_step:-1}
   done
   if [ $u_ok -ne 0 ]; then

@@ -98,7 +98,7 @@ VM="${VM_SSH_HOST:-127.0.0.1}"
 VM_SSH_PORT="${VM_SSH_PORT:-22}"
 
 # helper: conditional diagnostic with message
-debug_sub_log(){ if [ "${DEBUG}" ]; then printf '::debug:: %s\n' "$*"; fi; }
+debug_sub_log(){ if [ "${DEBUG}" -eq 1 ]; then printf '::debug:: %s\n' "$*"; fi; }
 
 # TODO: verify ANYVM_BRIDGE_HOSTS_FILE is a file that exists
 debug_sub_log "Preparing script to bridge hosts on Guest VM" ;
