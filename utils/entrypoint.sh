@@ -156,6 +156,20 @@ safe_uuidgen() {
 	fi
 }
 
+debug_log "=> Defining helper for tilda in paths" &
+
+# resolve_tilde PATH
+# Expands a leading ~ (or ~/...) using $HOME. Otherwise returns PATH unchanged.
+resolve_tilde() {
+	# ensure we don't rely on positional params naming quirks
+	_p=${1-}
+	case $_p in
+		~) printf '%s\n' "${HOME:-$USER}" ;;
+		~/*) printf '%s\n' "${HOME:-$USER}/${_p#/}" ;;
+		*) printf '%s\n' "$_p" ;;
+	esac
+}
+
 debug_log "=> Defining string matches function" &
 
 # helper: is the string a match or not (usage: if matches str1 str2; then ... ; else .... ; fi)
@@ -432,7 +446,10 @@ fi
 # TODO: need way to use pid file eg --pidfile "$DATA_DIR/anyvm.pid"
 START_ARGS=(--os "${ANYVM_OSNAME}" --mem "$ANYVM_MEM" --detach --builder "$ANYVM_VERSION")
 if [ -d "$DATA_DIR" ]; then
-	START_ARGS+=(--data-dir "$DATA_DIR")
+	_SAFE_DATA_DIR=$(resolve_tilde "$DATA_DIR")
+	if [ -d "$_SAFE_DATA_DIR" ]; then
+		START_ARGS+=(--data-dir "$_SAFE_DATA_DIR")
+	fi
 fi
 if [ -n "$ANYVM_ARCH" ] ; then
 	START_ARGS+=(--arch "${ANYVM_ARCH}")
