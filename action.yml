@@ -103,6 +103,11 @@ inputs:
     type: boolean
     required: false
     default: true
+  drop-root:
+    description: "create a runner user on the VM to use instead of default root user."
+    type: boolean
+    required: false
+    default: true
   data-dir:
     description: "Directory to store VM data and images"
     required: false
@@ -199,7 +204,7 @@ runs:
         INPUT_AFTERWARDS: ${{ inputs.afterwards }}
         INPUT_RELEASE: ${{ inputs.release }}
         INPUT_ARCH: ${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}
-        INPUT_ENVS: ${{ inputs.envs }} # TODO: needs to be bridged
+        INPUT_ENVS: ${{ inputs.envs }} # TODO: needs to be normalized
         INPUT_MEM: ${{ inputs.mem }}  # TODO: should also provide host swap on linux when value is above runner shreshold, etc.
         INPUT_CPU: ${{ inputs.cpu || steps.detect_cpus.outputs.cpus }}
         INPUT_SYNC: ${{ inputs.sync || 'scp' }}
@@ -210,6 +215,7 @@ runs:
         INPUT_SYNC_TIME: ${{ inputs.sync-time }}
         INPUT_DISABLE_CACHE: ${{ inputs.disable-cache }}
         INPUT_CUSTOM_SHELL_NAME: ${{ inputs.custom-shell-name || 'vmsh' }}
+        INPUT_CREATE_USER: ${{ inputs.drop-root }}
       run: |
         set -eu
         if [ -n "$ANYVM_ACTION_PATH" ]; then
