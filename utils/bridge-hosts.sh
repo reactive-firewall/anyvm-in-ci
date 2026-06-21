@@ -76,7 +76,7 @@ set -eu
 # - preserves "blackhole" localhost-style entries from host (e.g. somehost -> 127.0.0.1 or ::1)
 #
 # Assumptions (reasonable defaults):
-# - VM ssh reachable as root@"$VM_SSH_HOST" on port $VM_SSH_PORT using key $EPHEM_KEY
+# - VM ssh reachable as root@"$VM_SSH_HOST" on port $BRIDGE_VM_PORT using key $EPHEM_KEY
 # - scp/ssh available locally and on guest
 #
 # Behavior summary:
@@ -93,24 +93,30 @@ set -eu
 # TODO: verify ANYVM_BRIDGE_HOSTS_FILE is set or abort
 
 ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE:-}"
+BRIDGE_DATA_DIR="${DATA_DIR:-}"
 SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS:-}";
-VM="${VM_SSH_HOST:-127.0.0.1}"
-VM_SSH_PORT="${VM_SSH_PORT:-22}"
+BRIDGE_VM="${VM_SSH_HOST:-127.0.0.1}"
+BRIDGE_VM_PORT="${VM_SSH_PORT:-22}"
 
 # helper: conditional diagnostic with message
-debug_sub_log(){ if [ "${DEBUG}" -eq 1 ]; then printf '::debug:: %s\n' "$*"; fi; }
+debug_sub_log(){ if [ "${DEBUG:-0}" -eq 1 ]; then printf '::debug:: %s\n' "$*"; fi; }
+
+BRIDGE_VERBOSE_FLAG=${BRIDGE_VERBOSE_FLAG_INIT:-}
+# always enable if DEBUG mode
+if [ "${DEBUG:-0}" -eq 1 ]; then BRIDGE_VERBOSE_FLAG="-v"; fi;
 
 # TODO: verify ANYVM_BRIDGE_HOSTS_FILE is a file that exists
+
 debug_sub_log "Preparing script to bridge hosts on Guest VM" ;
-BRIDGE_HOSTS_SCRIPT_PATH="$DATA_DIR/bridge_hosts_$$.sh"
-cp -vf "${ANYVM_BRIDGE_HOSTS_FILE}" "$BRIDGE_HOSTS_SCRIPT_PATH"
+BRIDGE_HOSTS_SCRIPT_PATH="$BRIDGE_DATA_DIR/bridge_hosts_$$.sh"
+cp ${BRIDGE_VERBOSE_FLAG:-} -f "${ANYVM_BRIDGE_HOSTS_FILE}" "$BRIDGE_HOSTS_SCRIPT_PATH"
 debug_sub_log "=> Staged" & debug_sub_log "..=> Setting Permissions on staged script" ;
-chmod +x "$BRIDGE_HOSTS_SCRIPT_PATH"
+chmod ${BRIDGE_VERBOSE_FLAG:-} +x "$BRIDGE_HOSTS_SCRIPT_PATH"
 
 debug_sub_log "Ready to transfer \"${BRIDGE_HOSTS_SCRIPT_PATH}\" to Guest VM" ;
 
 debug_sub_log "=> Using runner /etc/hosts data to bridge hosts on Guest VM" ;
-BRIDGE_HOSTS_DATA_PATH="$DATA_DIR/hosts_$$.data"
+BRIDGE_HOSTS_DATA_PATH="$BRIDGE_DATA_DIR/hosts_$$.data"
 
 # copy host file to guest /tmp/hosts.from_host
 if [ -f /etc/hosts ]; then
@@ -118,11 +124,11 @@ if [ -f /etc/hosts ]; then
   debug_sub_log "..=> Data Staged"
   debug_sub_log "=> Ready to also transfer \"${BRIDGE_HOSTS_DATA_PATH}\" to Guest VM" ;
   debug_sub_log "....=> Waiting for transfer" ;
-  scp $SSH_EPHEMERAL_OPTS -P ${VM_SSH_PORT:-22} "${BRIDGE_HOSTS_DATA_PATH}" root@"$VM":/tmp/hosts.from_host || printf '::warning:: %s\n' "failed to scp bridge-hosts data"
-  scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "$BRIDGE_HOSTS_SCRIPT_PATH" root@"$VM":/tmp/bridge-hosts.sh || printf '::warning:: %s\n' "failed to scp bridge-hosts script"
-  debug_sub_log "..=> Transferred" & {rm -f "$BRIDGE_HOSTS_DATA_PATH" 2>/dev/null || true ;} & debug_sub_log "..=> Waiting for bridging" &
+  scp $SSH_EPHEMERAL_OPTS -P ${BRIDGE_VM_PORT:-22} "${BRIDGE_HOSTS_DATA_PATH}" root@"$BRIDGE_VM":/tmp/hosts.from_host || printf '::warning:: %s\n' "failed to scp bridge-hosts data"
+  scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$BRIDGE_HOSTS_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/bridge-hosts.sh || printf '::warning:: %s\n' "failed to scp bridge-hosts script"
+  debug_sub_log "..=> Transferred" & {rm ${BRIDGE_VERBOSE_FLAG:-} -f "$BRIDGE_HOSTS_DATA_PATH" 2>/dev/null || true ;} & debug_sub_log "..=> Waiting for bridging" &
   # remote merge script: run on guest (idempotent-ish)
-  ssh $SSH_EPHEMERAL_OPTS -p ${VM_SSH_PORT:-22} root@"$VM" "sh /tmp/bridge-hosts.sh" || printf '::error:: %s\n' "warning: bridge-hosts execution failed"
+  ssh $SSH_EPHEMERAL_OPTS -p ${BRIDGE_VM_PORT:-22} root@"$BRIDGE_VM" "sh /tmp/bridge-hosts.sh" || printf '::error:: %s\n' "warning: bridge-hosts execution failed"
   debug_sub_log "=> Bridged"
 else
   printf '::warning:: %s\n' "/etc/hosts not found locally; nothing to merge." >&2
@@ -130,8 +136,11 @@ else
 fi
 
 # best effort cleanup
-rm -f "$BRIDGE_HOSTS_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
-unset VM
+rm ${BRIDGE_VERBOSE_FLAG:-} -f "$BRIDGE_HOSTS_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
+unset BRIDGE_VM
+unset BRIDGE_VM_PORT
+unset BRIDGE_DATA_DIR
+unset BRIDGE_VERBOSE_FLAG
 unset BRIDGE_HOSTS_DATA_PATH
 unset BRIDGE_HOSTS_SCRIPT_PATH
 unset debug_sub_log || true

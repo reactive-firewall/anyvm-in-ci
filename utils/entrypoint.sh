@@ -145,6 +145,16 @@ debug_log "=> Defining error handling function" &
 # helper: fail with message
 die(){ printf "::error file='%s',title='ERROR':: %s\n" "${0}" "$*" >&2; exit 1; }
 
+debug_log "=> Defining safe uuidgen function" &
+# helper: portable uuidgen
+safe_uuidgen() {
+	if command -v uuidgen >/dev/null 2>&1; then
+		uuidgen
+	else
+		printf "%04x%04x-%04x-%04x-%04x-%04x%04x%04x\n" $RANDOM $RANDOM $RANDOM $(($RANDOM & 0x0fff | 0x4000)) $(($RANDOM & 0x3fff | 0x8000)) $RANDOM $RANDOM $RANDOM
+	fi
+}
+
 debug_log "=> Defining string matches function" &
 
 # helper: is the string a match or not (usage: if matches str1 str2; then ... ; else .... ; fi)
@@ -226,7 +236,8 @@ install_qemu(){
 debug_log "=> Defining download function" &
 
 download_file(){
-	url=$1 dest=$2 tmp="${dest}.tmp.$$"
+	url=$1 dest=$2
+	tmp="${dest}.tmp.$(safe_uuidgen)"
 	mkdir -p "$(dirname "$dest")" || true
 	if ! curl -L --fail --silent --show-error --output "$tmp" --write-out "%{http_code}" --url "$url" >"$tmp.httpcode"; then
 		rm -f "$tmp" "$tmp.httpcode"; return 1
@@ -494,7 +505,7 @@ EPHEM_PUB_CONTENT="$(cat ${EPHEM_KEY}.pub)"
 mask_inputs "$EPHEM_PUB_CONTENT";
 
 debug_log "..=> Preparing script to rotate Guest VM keys" ;
-ROTATE_ROOT_SCRIPT_PATH="$DATA_DIR/rotate_root_$$.sh"
+ROTATE_ROOT_SCRIPT_PATH="$DATA_DIR/rotate_root_$(safe_uuidgen).sh"
 cp -vf "${ANYVM_ROTATE_RKEYS_FILE}" "$ROTATE_ROOT_SCRIPT_PATH"
 debug_log "..=> Staged" & debug_log "....=> Setting Permissions on staged script" ;
 chmod +x "$ROTATE_ROOT_SCRIPT_PATH"

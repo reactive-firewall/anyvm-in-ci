@@ -100,7 +100,7 @@ VM_CI_USER="${GUEST_USER:-runner}"
 USER_KEY="${USER_KEY:-}"
 
 # helper: conditional diagnostic with message
-debug_user_log(){ if [ "${DEBUG}" -eq 1 ]; then printf '::debug:: %s\n' "$*"; fi; }
+debug_user_log(){ if [ "${DEBUG:-0}" -eq 1 ]; then printf '::debug:: %s\n' "$*"; fi; }
 
 # Portable sh (e.g., FreeBSD /bin/sh) helper:
 # Masks the exact strings passed as arguments, using GitHub Actions logging command.
