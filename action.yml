@@ -196,10 +196,12 @@ runs:
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: |
-          ${{ inputs.cache-dir }}/anyvm.py
+          ${{ inputs.cache-dir }}/**/anyvm.py
+          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/*.qemu
+          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/*.qcow2.zst
           ~/id_ci_vm_ephemeral_*
           ~/id_user_ci_*
-          ${{ inputs.cache-dir }}/anyvm-in-ci/bin/**
+          /opt/**/anyvm-in-ci/bin/${{ inputs.custom-shell-name || 'vmsh' }}
         key: ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}
         restore-keys: |
           ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-

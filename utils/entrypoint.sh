@@ -93,13 +93,14 @@ ANYVM_CPU_ARCH="${INPUT_CPU_ARCH:-}"  # optional VM specific CPU model
 ANYVM_VERSION="${ANYVM_VERSION:-2.1.8}"    # pin this per OS builder
 ANYVM_SHA="7d20a921892ad49d4338dc4d9b641b496658cb78"  # v0.4.3
 ANYVM_CACHE_DIR="${INPUT_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/anyvm-cache}"
-DATA_DIR="${INPUT_DATA_DIR:-$ANYVM_CACHE_DIR/data}"
+DATA_DIR="${ANYVM_CACHE_DIR}/${INPUT_DATA_DIR:-data}"
 VM_USER_CREATE="${INPUT_CREATE_USER:-true}"    # create non-root user by default
 HOST_USER="${INPUT_HOST_USER:-${RUNNER_USER:-$(whoami)}}"
 GITHUB_TIMEOUT="${INPUT_TIMEOUT:-${JOB_TIMEOUT:-360}}"  # minutes; JOB_TIMEOUT can be set by workflow
 ANYVM_USE_VNC="${INPUT_ANYVM_USE_VNC:-false}"
 ANYVM_USE_IPV6="${INPUT_USE_IPV6:-false}" # adds --enable-ipv6
 SYNC_METHOD="${INPUT_SYNC:-scp}"
+ANYVM_SYNC_TIME=$( [ "${INPUT_SYNC_TIME:-}" ] && printf 1 || printf 0 )
 COPYBACK="${INPUT_COPYBACK:-true}"
 ENV_INPUTS="${INPUT_ENVS:-}"
 ANYVM_TOOL_CACHE_SUB_DIR="/anyvm-in-ci/bin"
@@ -430,6 +431,9 @@ fi
 # 3. start VM
 # TODO: need way to use pid file eg --pidfile "$DATA_DIR/anyvm.pid"
 START_ARGS=(--os "${ANYVM_OSNAME}" --mem "$ANYVM_MEM" --detach --builder "$ANYVM_VERSION")
+if [ -d "$DATA_DIR" ]; then
+	START_ARGS+=(--data-dir "$DATA_DIR")
+fi
 if [ -n "$ANYVM_ARCH" ] ; then
 	START_ARGS+=(--arch "${ANYVM_ARCH}")
 fi
@@ -550,8 +554,8 @@ fi
 # 4e. copy host /etc/hosts to guest (temp file) - best-effort
 debug_log "Bridging host file to guest"
 if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh" ]; then
-	ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE}" DATA_DIR="${DATA_DIR:-/tmp}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
-		"${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh"
+	# ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE}" DATA_DIR="${DATA_DIR}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT"
+	env "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh"
 else
 	# best-effort fallback
 	debug_log "Bridging via root"
@@ -564,12 +568,12 @@ debug_log "Bridging done"
 # 4f. optionally create unprivileged user matching host and set its authorized_keys to its own ephemeral key
 if matches "$VM_USER_CREATE" "true"; then
 	GUEST_USER="${HOST_USER:-runner}"
-	USER_KEY="${HOME:-.}/id_user_ci_$(date -u +%s)_rsa"
+	USER_KEY="${HOME:-.}/id_user_ci_$(safe_uuidgen)_rsa"
 	# TODO: match the UID of GUEST_USER
 	debug_log "Cloning CI user to guest VM"
 	if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-users.sh" ]; then
-		USER_KEY="${USER_KEY}" GUEST_USER="${GUEST_USER}" ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
-			"${ANYVM_UTIL_PATH_ARG}/bridge-users.sh"
+		# USER_KEY="${USER_KEY}" GUEST_USER="${GUEST_USER}" DATA_DIR="${DATA_DIR}"  ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT"
+		env "${ANYVM_UTIL_PATH_ARG}/bridge-users.sh"
 	fi
 	# TODO: choose a consistent term: synced or cloned or bridged
 	debug_log "CI user cloned to guest"

@@ -94,7 +94,7 @@ set -eu
 
 ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE:-}"
 BRIDGE_DATA_DIR="${DATA_DIR:-}"
-SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS:-}";
+SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS:-}"
 BRIDGE_VM="${VM_SSH_HOST:-127.0.0.1}"
 BRIDGE_VM_PORT="${VM_SSH_PORT:-22}"
 
@@ -126,9 +126,10 @@ if [ -f /etc/hosts ]; then
   debug_sub_log "....=> Waiting for transfer" ;
   scp $SSH_EPHEMERAL_OPTS -P ${BRIDGE_VM_PORT:-22} "${BRIDGE_HOSTS_DATA_PATH}" root@"$BRIDGE_VM":/tmp/hosts.from_host || printf '::warning:: %s\n' "failed to scp bridge-hosts data"
   scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$BRIDGE_HOSTS_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/bridge-hosts.sh || printf '::warning:: %s\n' "failed to scp bridge-hosts script"
-  debug_sub_log "..=> Transferred" & {rm ${BRIDGE_VERBOSE_FLAG:-} -f "$BRIDGE_HOSTS_DATA_PATH" 2>/dev/null || true ;} & debug_sub_log "..=> Waiting for bridging" &
+  debug_sub_log "..=> Transferred" & debug_sub_log "..=> Waiting for bridging" &
   # remote merge script: run on guest (idempotent-ish)
   ssh $SSH_EPHEMERAL_OPTS -p ${BRIDGE_VM_PORT:-22} root@"$BRIDGE_VM" "sh /tmp/bridge-hosts.sh" || printf '::error:: %s\n' "warning: bridge-hosts execution failed"
+  rm -f "$BRIDGE_HOSTS_DATA_PATH" 2>/dev/null || true ;
   debug_sub_log "=> Bridged"
 else
   printf '::warning:: %s\n' "/etc/hosts not found locally; nothing to merge." >&2
