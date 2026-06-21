@@ -114,6 +114,7 @@ inputs:
   cache-dir:
     description: "Directory to store anyvm cache"
     required: false
+    default: '~/Library/Caches/anyvm-in-ci'
   sync-time:
     description: "Synchronize the VM time with NTP (true/false)"
     type: boolean
@@ -191,6 +192,18 @@ runs:
         cpus=${cpus:-1}
         case "$cpus" in ''|*[!0-9]*) cpus=1 ;; esac
         echo "cpus=$cpus" >> "$GITHUB_OUTPUT"
+    - name: Cache
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ${{ inputs.cache-dir }}/anyvm.py
+          ~/id_ci_vm_ephemeral_*
+          ~/id_user_ci_*
+          ${{ inputs.cache-dir }}/anyvm-in-ci/bin/**
+        key: ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}
+        restore-keys: |
+          ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-
+          ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
     - name: "Validate inputs and run anyvm"
       id: anyvm-entrypoint
       shell: bash
@@ -211,7 +224,7 @@ runs:
         INPUT_COPYBACK: ${{ inputs.copyback }}
         INPUT_DEBUG: ${{ runner.debug }}
         INPUT_DATA_DIR: ${{ inputs.data-dir }}  # should set a reasonable default for caching logic
-        INPUT_CACHE_DIR: ${{ inputs.cache-dir }}  # TODO: should set secure default
+        INPUT_CACHE_DIR: ${{ inputs.cache-dir }}
         INPUT_SYNC_TIME: ${{ inputs.sync-time }}
         INPUT_DISABLE_CACHE: ${{ inputs.disable-cache }}
         INPUT_CUSTOM_SHELL_NAME: ${{ inputs.custom-shell-name || 'vmsh' }}
@@ -234,6 +247,16 @@ runs:
           printf "::error title='INVALID'::%s\n" "Missing anyvm-in-ci utilities." ;
           exit 1
         fi ;
+    - name: Save Cache
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ${{ inputs.cache-dir }}/anyvm.py
+          ~/id_ci_vm_ephemeral_*
+          ~/id_user_ci_*
+          ${{ inputs.cache-dir }}/anyvm-in-ci/bin/**
+        key: ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
+        lookup-only: true
     - name: "Cleanup any remaining VMs (EXPERIMENTAL)"
       id: anyvm-post-cleanup
       shell: bash

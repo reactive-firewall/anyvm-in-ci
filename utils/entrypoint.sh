@@ -481,7 +481,7 @@ printf "::endgroup::\n";
 debug_log "Refreshing VM keys" ;
 # 4. RSA-3072 ephemeral key generation with expiry comment
 # TODO: don't use date (birthday-weakness)
-EPHEM_KEY="${HOME:-.}/id_ci_vm_ephemeral_$(date -u +%s)_rsa"
+EPHEM_KEY="${HOME:-.}/id_ci_vm_ephemeral_$(safe_uuidgen)_rsa"
 ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -V -1m:+6h -C "ci-vm-ephemeral-$(date -u +%s)" >/dev/null || die "Failed to generate ephemeral keys"
 
 debug_log "Checking for new ephemeral key pair"
@@ -550,7 +550,7 @@ fi
 # 4e. copy host /etc/hosts to guest (temp file) - best-effort
 debug_log "Bridging host file to guest"
 if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh" ]; then
-	ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
+	ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE}" DATA_DIR="${DATA_DIR:-/tmp}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" \
 		"${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh"
 else
 	# best-effort fallback
