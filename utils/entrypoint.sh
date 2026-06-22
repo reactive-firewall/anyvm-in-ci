@@ -330,11 +330,23 @@ for cmd in "${required[@]}"; do
 done
 
 debug_log "Ensure cache dirs exists" &
-mkdir -p "$ANYVM_CACHE_DIR" "$DATA_DIR"
+mkdir -p "$ANYVM_CACHE_DIR"
+mkdir -p "$DATA_DIR"
 debug_log "Ensure tools cache dir exists"
 mkdir -p "${VMSH_DIR}"
 debug_log "Ensure image cache dir exists"
 mkdir -p "$DATA_DIR/images"
+
+for SOME_CACHE_DIR in "$ANYVM_CACHE_DIR" "$DATA_DIR" "$DATA_DIR/images" "${VMSH_DIR}"; do
+	mkdir -p "$SOME_CACHE_DIR"
+	debug_log "=> Checking for \"$SOME_CACHE_DIR\"" ;
+	if [ -d "$SOME_CACHE_DIR" ] >/dev/null 2>&1; then
+		debug_log "=> Found \"$SOME_CACHE_DIR\"" 2>&1);
+	else
+		die "Required directory could not be created correctly: $SOME_CACHE_DIR" ;
+	fi ;
+done
+
 # optional tools: rsync brew apt-get yum choco etc.
 
 debug_log "Checking for qemu tools" ;
