@@ -329,16 +329,16 @@ for cmd in "${required[@]}"; do
 	fi ;
 done
 
+debug_log "Resolve paths with tildes" &
+
+ANYVM_CACHE_DIR=$(resolve_tilde "${ANYVM_CACHE_DIR}");
+DATA_DIR=$(resolve_tilde "${DATA_DIR}");
+VMSH_DIR=$(resolve_tilde "${VMSH_DIR}");
+
 debug_log "Ensure cache dirs exists" &
-mkdir -p "$ANYVM_CACHE_DIR"
-mkdir -p "$DATA_DIR"
-debug_log "Ensure tools cache dir exists"
-mkdir -p "${VMSH_DIR}"
-debug_log "Ensure image cache dir exists"
-mkdir -p "$DATA_DIR/images"
 
 for SOME_CACHE_DIR in "$ANYVM_CACHE_DIR" "$DATA_DIR" "$DATA_DIR/images" "${VMSH_DIR}"; do
-	mkdir -p "$SOME_CACHE_DIR"
+	mkdir -p "$SOME_CACHE_DIR" ;
 	debug_log "=> Checking for \"$SOME_CACHE_DIR\"" ;
 	if [ -d "$SOME_CACHE_DIR" ]; then
 		debug_log "=> Found \"$SOME_CACHE_DIR\"" ;
@@ -356,8 +356,6 @@ install_qemu
 debug_log "=> qemu installed" &
 
 # 2. fetch anyvm from github and use its anyvm.py
-debug_log "Ensure image cache dir exists"
-mkdir -p "$DATA_DIR/images"
 
 debug_log "Ensure we have anyvm.py..."
 # Download anyvm.py (kept)
@@ -443,7 +441,7 @@ fi
 
 { BAKED_PUB_CONTENT=$(cat <"$BAKED_PUB");
 	mask_inputs "$BAKED_PUB_CONTENT";
-	unset BAKED_PRIV_CONTENT ;
+	unset BAKED_PUB_CONTENT ;
 	# "shred" the var
 	BAKED_PUB_CONTENT="<NULL>" ;
 	unset BAKED_PUB_CONTENT ;} 2>/dev/null || true ; # pub-key is only best effort
@@ -456,41 +454,55 @@ fi
 
 # 3. start VM
 # TODO: need way to use pid file eg --pidfile "$DATA_DIR/anyvm.pid"
+debug_log "Configuring ANYVM call"
+debug_log "=> Selecting VM OS (--os \"${ANYVM_OSNAME}\")" &
+debug_log "=> Selecting VM RAM (--mem \"$ANYVM_MEM\")" &
+debug_log "=> Setting VM Builder (--builder \"$ANYVM_VERSION\")" &
 START_ARGS=(--os "${ANYVM_OSNAME}" --mem "$ANYVM_MEM" --detach --builder "$ANYVM_VERSION")
 if [ -d "$DATA_DIR" ]; then
+	debug_log "=> Selecting data dir..."
 	_SAFE_DATA_DIR=$(resolve_tilde "$DATA_DIR")
 	if [ -d "$_SAFE_DATA_DIR" ]; then
+		debug_log "..=> Will use data dir (--data-dir ****)"
 		START_ARGS+=(--data-dir "$_SAFE_DATA_DIR")
 	fi
 fi
 if [ -n "$ANYVM_ARCH" ] ; then
+	debug_log "=> Selecting VM ISA (--arch \"${ANYVM_ARCH\")"
 	START_ARGS+=(--arch "${ANYVM_ARCH}")
 fi
 if [ -n "$ANYVM_RELEASE" ] ; then
+	debug_log "=> Selecting VM Release (--release \"${ANYVM_RELEASE\")"
 	START_ARGS+=(--release "${ANYVM_RELEASE}")
 fi
 # with fixed CPU count
-if [ -n "$ANYVM_CPU" ]; then
+if [ -n "$ANYVM_CPU" ] && [ "${ANYVM_CPU}" -ge 1 ]; then
+	debug_log "=> Selecting VM CPU count (--cpu \"$ANYVM_CPU\")"
 	START_ARGS+=(--cpu "$ANYVM_CPU")
 fi
 
 # with ipv6 support
 if matches "$ANYVM_USE_IPV6" "true"; then
+	debug_log "=> Selecting VM RFC 8200: STD 86 Networking mode (--enable-ipv6)"
 	START_ARGS+=(--enable-ipv6)
+else
+	debug_log "=> Selecting VM RFC 791: STD 5 Networking mode (default)"
 fi
 
 # with VNC disabled (CI focused)
 if matches "$ANYVM_USE_VNC" "true" ; then
 	printf "::warning file='%s',title='EXPOSED':: %s\n" "${0}" "VM's VNC is exposed. This is not recommended in a CI/CD environment!"
 else
+	debug_log "=> disabling VNC in CI pipeline for improved security (--vnc off)"
 	START_ARGS+=(--vnc off)
 fi
 
+debug_log "=> Limmiting VM SSH to localhost in CI pipeline for improved security (\"$VM_SSH_HOST\")"
 VM_SSH_HOST="127.0.0.1"
 # get port robustly, default to 55555
 VM_SSH_PORT=$(sh -c 'awk -v L=49154 -v H=64535 "BEGIN{srand(); print int(L+rand()*(H-L+1))}"')
 VM_SSH_PORT="${VM_SSH_PORT:-55555}"
-
+debug_log "=> Selecting VM SSH port (--ssh-port \"$VM_SSH_PORT\")"
 START_ARGS+=(--ssh-port "${VM_SSH_PORT}")
 
 # TODO: make this more flexible via overrides and relative default
@@ -539,7 +551,8 @@ mask_inputs "$EPHEM_PUB_CONTENT";
 
 debug_log "..=> Preparing script to rotate Guest VM keys" ;
 ROTATE_ROOT_SCRIPT_PATH="$DATA_DIR/rotate_root_$(safe_uuidgen).sh"
-cp -vf "${ANYVM_ROTATE_RKEYS_FILE}" "$ROTATE_ROOT_SCRIPT_PATH"
+# TODO: only add -v when in debug mode
+cp -f "${ANYVM_ROTATE_RKEYS_FILE}" "$ROTATE_ROOT_SCRIPT_PATH"
 debug_log "..=> Staged" & debug_log "....=> Setting Permissions on staged script" ;
 chmod +x "$ROTATE_ROOT_SCRIPT_PATH"
 
@@ -583,11 +596,12 @@ fi
 # 4e. copy host /etc/hosts to guest (temp file) - best-effort
 debug_log "Bridging host file to guest"
 if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh" ]; then
-	# ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE}" DATA_DIR="${DATA_DIR}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT"
-	env "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh"
+	debug_log "=> Bridging via util: bridge-hosts.sh"
+	ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE}" DATA_DIR="${DATA_DIR}" SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS}" VM_SSH_HOST="${VM_SSH_HOST}" VM_SSH_PORT="${VM_SSH_PORT}" \
+	"${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh"
 else
 	# best-effort fallback
-	debug_log "Bridging via root"
+	debug_log "=> Bridging via root"
 	scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT /etc/hosts root@"$VM_SSH_HOST":/tmp/hosts.guest || die "failed to scp runner host file script"
 	ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "cat /tmp/hosts.guest >> /etc/hosts || true" || die "failed to clobber Guest /etc/hosts"
 fi
