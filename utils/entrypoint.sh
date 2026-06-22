@@ -340,8 +340,8 @@ mkdir -p "$DATA_DIR/images"
 for SOME_CACHE_DIR in "$ANYVM_CACHE_DIR" "$DATA_DIR" "$DATA_DIR/images" "${VMSH_DIR}"; do
 	mkdir -p "$SOME_CACHE_DIR"
 	debug_log "=> Checking for \"$SOME_CACHE_DIR\"" ;
-	if [ -d "$SOME_CACHE_DIR" ] >/dev/null 2>&1; then
-		debug_log "=> Found \"$SOME_CACHE_DIR\"" 2>&1);
+	if [ -d "$SOME_CACHE_DIR" ]; then
+		debug_log "=> Found \"$SOME_CACHE_DIR\"" ;
 	else
 		die "Required directory could not be created correctly: $SOME_CACHE_DIR" ;
 	fi ;
