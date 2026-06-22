@@ -163,9 +163,11 @@ debug_log "=> Defining helper for tilda in paths" &
 resolve_tilde() {
 	# ensure we don't rely on positional params naming quirks
 	_p=${1-}
+	_tilde_sq='~';
+	_tilde_dq=$"~";
 	case $_p in
-		~) printf '%s\n' "${HOME:-$USER}" ;;
-		~/*) printf '%s\n' "${HOME:-$USER}/${_p#/}" ;;
+		~|$_tilde_sq|$_tilde_dq) printf '%s\n' "${HOME:-$USER}" ;;
+		~/*|$_tilde_sq/*|$_tilde_dq/*) printf '%s\n' "${HOME:-$USER}/${_p#/}" ;;
 		*) printf '%s\n' "$_p" ;;
 	esac
 }
@@ -456,8 +458,8 @@ fi
 # TODO: need way to use pid file eg --pidfile "$DATA_DIR/anyvm.pid"
 debug_log "Configuring ANYVM call"
 debug_log "=> Selecting VM OS (--os \"${ANYVM_OSNAME}\")" &
-debug_log "=> Selecting VM RAM (--mem \"$ANYVM_MEM\")" &
-debug_log "=> Setting VM Builder (--builder \"$ANYVM_VERSION\")" &
+debug_log "=> Selecting VM RAM (--mem \"${ANYVM_MEM}\")" &
+debug_log "=> Setting VM Builder (--builder \"${ANYVM_VERSION}\")" &
 START_ARGS=(--os "${ANYVM_OSNAME}" --mem "$ANYVM_MEM" --detach --builder "$ANYVM_VERSION")
 if [ -d "$DATA_DIR" ]; then
 	debug_log "=> Selecting data dir..."
@@ -468,17 +470,17 @@ if [ -d "$DATA_DIR" ]; then
 	fi
 fi
 if [ -n "$ANYVM_ARCH" ] ; then
-	debug_log "=> Selecting VM ISA (--arch \"${ANYVM_ARCH\")"
+	debug_log "=> Selecting VM ISA (--arch \"${ANYVM_ARCH}\")"
 	START_ARGS+=(--arch "${ANYVM_ARCH}")
 fi
 if [ -n "$ANYVM_RELEASE" ] ; then
-	debug_log "=> Selecting VM Release (--release \"${ANYVM_RELEASE\")"
+	debug_log "=> Selecting VM Release (--release \"${ANYVM_RELEASE}\")"
 	START_ARGS+=(--release "${ANYVM_RELEASE}")
 fi
 # with fixed CPU count
 if [ -n "$ANYVM_CPU" ] && [ "${ANYVM_CPU}" -ge 1 ]; then
-	debug_log "=> Selecting VM CPU count (--cpu \"$ANYVM_CPU\")"
-	START_ARGS+=(--cpu "$ANYVM_CPU")
+	debug_log "=> Selecting VM CPU count (--cpu \"${ANYVM_CPU}\")"
+	START_ARGS+=(--cpu "${ANYVM_CPU}")
 fi
 
 # with ipv6 support
@@ -667,19 +669,19 @@ else
 fi
 
 # 7. run startup hook if exists
-"$VMSH_CMD" "[ -x ./startup.sh ] && ./startup.sh || true" || true
+"${VMSH_CMD}" $"[ -x ./startup.sh ] && ./startup.sh || true" || true
 
 # 8. run 'prepare' if provided
 if [ -n "${INPUT_PREPARE:-}" ]; then
 	printf "::group::%s\n" "Run prepare" ;
-	"$VMSH_CMD" "$INPUT_PREPARE" ;
+	"${VMSH_CMD}" "$INPUT_PREPARE" ;
 	printf "\n::endgroup::\n" ;
 fi
 
 # 9. run CI command (required)
 if [ -n "${INPUT_RUN:-}" ]; then
 	printf "::group::%s\n" "Run step on VM" ;
-	"$VMSH_CMD" "$INPUT_RUN" ;
+	"${VMSH_CMD}" "$INPUT_RUN" ;
 	printf "\n::endgroup::\n" ;
 fi
 
@@ -688,7 +690,7 @@ fi
 # 10b afterwards
 if [ -n "${INPUT_AFTERWARDS:-}" ]; then
 	printf "::group::%s\n" "Run afterwards" ;
-	"$VMSH_CMD" "$INPUT_AFTERWARDS" ;
+	"${VMSH_CMD}" "$INPUT_AFTERWARDS" ;
 	printf "\n::endgroup::\n" ;
 fi
 
