@@ -67,7 +67,7 @@
 # Portable /bin/sh-compatible function returning tilde expanded paths from input
 expand_tilde() {
   _p=${1-}
-  case $p in
+  case $_p in
     "~")
       printf '%s' "$HOME"
       ;;
