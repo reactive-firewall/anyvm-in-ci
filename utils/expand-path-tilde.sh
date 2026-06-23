@@ -72,7 +72,7 @@ expand_tilde() {
       printf '%s' "$HOME"
       ;;
     "~/"*)
-      printf '%s/%s' "$HOME" "${_p#~/}"
+      printf '%s/%s' "$HOME" "${_p#~/}" | tr -d '~'
       ;;
     *)
       printf '%s' "$_p"
