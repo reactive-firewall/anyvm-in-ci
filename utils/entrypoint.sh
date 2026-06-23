@@ -81,6 +81,7 @@ set -eu
 
 # MARK: load functions
 . "${ANYVM_UTIL_PATH_ARG:-.}/latest-vm-release.sh" ;
+. "${ANYVM_UTIL_PATH_ARG:-.}/expand-path-tilde.sh" ;
 
 # MARK: Inputs
 DEBUG=$( [ "${ACTIONS_RUNNER_DEBUG:-}" ] || [ "${ACTIONS_STEP_DEBUG:-}" ] || [ "${INPUT_DEBUG:-}" ] && printf 1 || printf 0 )
@@ -92,13 +93,15 @@ ANYVM_CPU="${INPUT_CPU:-1}"
 ANYVM_CPU_ARCH="${INPUT_CPU_ARCH:-}"  # optional VM specific CPU model
 ANYVM_VERSION="${ANYVM_VERSION:-2.1.8}"    # pin this per OS builder
 ANYVM_SHA="7d20a921892ad49d4338dc4d9b641b496658cb78"  # v0.4.3
-ANYVM_CACHE_DIR="${INPUT_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/anyvm-cache}"
-DATA_DIR="${ANYVM_CACHE_DIR}/${INPUT_DATA_DIR:-data}"
+ANYVM_CACHE_DIR="$(expand_tilde "${INPUT_CACHE_DIR:-${RUNNER_TOOL_CACHE:-/opt}/anyvm-cache}")"
+INPUT_DATA_DIR="${INPUT_DATA_DIR:-data}"
+INPUT_DATA_DIR="$(expand_tilde "$INPUT_DATA_DIR")"
+DATA_DIR="${ANYVM_CACHE_DIR}/${INPUT_DATA_DIR}"
 VM_USER_CREATE="${INPUT_CREATE_USER:-true}"    # create non-root user by default
 HOST_USER="${INPUT_HOST_USER:-${RUNNER_USER:-$(whoami)}}"
 GITHUB_TIMEOUT="${INPUT_TIMEOUT:-${JOB_TIMEOUT:-360}}"  # minutes; JOB_TIMEOUT can be set by workflow
 ANYVM_USE_VNC="${INPUT_ANYVM_USE_VNC:-false}"
-ANYVM_USE_IPV6="${INPUT_USE_IPV6:-false}" # adds --enable-ipv6
+ANYVM_USE_IPV6="${INPUT_USE_IPV6:-false}" # a value of 'true' adds --enable-ipv6 to anyvm args
 SYNC_METHOD="${INPUT_SYNC:-scp}"
 ANYVM_SYNC_TIME=$( [ "${INPUT_SYNC_TIME:-}" ] && printf 1 || printf 0 )
 COPYBACK="${INPUT_COPYBACK:-true}"
@@ -154,22 +157,6 @@ safe_uuidgen() {
 	else
 		printf "%04x%04x-%04x-%04x-%04x-%04x%04x%04x\n" $RANDOM $RANDOM $RANDOM $(($RANDOM & 0x0fff | 0x4000)) $(($RANDOM & 0x3fff | 0x8000)) $RANDOM $RANDOM $RANDOM
 	fi
-}
-
-debug_log "=> Defining helper for tilda in paths" &
-
-# resolve_tilde PATH
-# Expands a leading ~ (or ~/...) using $HOME. Otherwise returns PATH unchanged.
-resolve_tilde() {
-	# ensure we don't rely on positional params naming quirks
-	_p=${1-}
-	_tilde_sq='~';
-	_tilde_dq=$"~";
-	case $_p in
-		~|$_tilde_sq|$_tilde_dq) printf '%s\n' "${HOME:-$USER}" ;;
-		~/*|$_tilde_sq/*|$_tilde_dq/*) printf '%s\n' "${HOME:-$USER}/${_p#/}" ;;
-		*) printf '%s\n' "$_p" ;;
-	esac
 }
 
 debug_log "=> Defining string matches function" &
@@ -331,12 +318,6 @@ for cmd in "${required[@]}"; do
 	fi ;
 done
 
-debug_log "Resolve paths with tildes" &
-
-ANYVM_CACHE_DIR=$(resolve_tilde "${ANYVM_CACHE_DIR}");
-DATA_DIR=$(resolve_tilde "${DATA_DIR}");
-VMSH_DIR=$(resolve_tilde "${VMSH_DIR}");
-
 debug_log "Ensure cache dirs exists" &
 
 for SOME_CACHE_DIR in "$ANYVM_CACHE_DIR" "$DATA_DIR" "$DATA_DIR/images" "${VMSH_DIR}"; do
@@ -461,13 +442,9 @@ debug_log "=> Selecting VM OS (--os \"${ANYVM_OSNAME}\")" &
 debug_log "=> Selecting VM RAM (--mem \"${ANYVM_MEM}\")" &
 debug_log "=> Setting VM Builder (--builder \"${ANYVM_VERSION}\")" &
 START_ARGS=(--os "${ANYVM_OSNAME}" --mem "$ANYVM_MEM" --detach --builder "$ANYVM_VERSION")
-if [ -d "$DATA_DIR" ]; then
+if [ -d "${DATA_DIR:-}" ]; then
 	debug_log "=> Selecting data dir..."
-	_SAFE_DATA_DIR=$(resolve_tilde "$DATA_DIR")
-	if [ -d "$_SAFE_DATA_DIR" ]; then
-		debug_log "..=> Will use data dir (--data-dir ****)"
-		START_ARGS+=(--data-dir "$_SAFE_DATA_DIR")
-	fi
+	START_ARGS+=(--data-dir "$DATA_DIR")
 fi
 if [ -n "$ANYVM_ARCH" ] ; then
 	debug_log "=> Selecting VM ISA (--arch \"${ANYVM_ARCH}\")"

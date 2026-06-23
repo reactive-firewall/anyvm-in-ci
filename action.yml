@@ -39,7 +39,7 @@ inputs:
     type: string
     required: false
   arch:
-    description: "The CPU architecture of the VM (e.g., x86_64, arm64)"
+    description: "The CPU architecture of the VM (e.g., x86_64, aarch64)"
     type: choice
     options:
       - x86_64
@@ -114,7 +114,7 @@ inputs:
   cache-dir:
     description: "Directory to store anyvm cache"
     required: false
-    default: '~/Library/Caches/anyvm-in-ci'
+    default: ~/Library/Caches/anyvm-in-ci
   sync-time:
     description: "Synchronize the VM time with NTP (true/false)"
     type: boolean
@@ -129,6 +129,10 @@ inputs:
     description: "Custom shell name for VM shell wrapper script"
     required: false
     default: "vmsh"
+  ipv6-enabled:
+    description: "Enable RFC 8200: STD 86 Networking mode (IPv6) for the guest VM (true/false)"
+    type: boolean
+    required: false
   token:
     description: |
       GitHub token used to authenticate when fetching VM images from
@@ -228,21 +232,45 @@ runs:
         INPUT_DATA_DIR: ${{ inputs.data-dir }}  # should set a reasonable default for caching logic
         INPUT_CACHE_DIR: ${{ inputs.cache-dir }}
         INPUT_SYNC_TIME: ${{ inputs.sync-time }}
+        INPUT_USE_IPV6: ${{ inputs.ipv6-enabled }}
         INPUT_DISABLE_CACHE: ${{ inputs.disable-cache }}
         INPUT_CUSTOM_SHELL_NAME: ${{ inputs.custom-shell-name || 'vmsh' }}
         INPUT_CREATE_USER: ${{ inputs.drop-root }}
       run: |
+        # run in nested VM
         set -eu
         if [ -n "$ANYVM_ACTION_PATH" ]; then
+          if [ -x /bin/dd ]; then
+            # stir the host entropy
+            for i in {1..100}; do
+            dd if=/dev/urandom of=/dev/null bs=1M count=1 status=none;
+            done ;
+          fi ;
           entrypoint="${ANYVM_ACTION_PATH}/utils/entrypoint.sh"
           if [ -x "${entrypoint}" ] ; then
-            # TODO: handle -e, -f and -r checks with improved diagnostics too
             "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ;
             unset entrypoint 2>/dev/null ;
           else
-            printf "::error title='BUG'::%s\n" "Missing anyvm-in-ci entrypoint (This is a BUG)" ;
-            unset entrypoint 2>/dev/null || true ;
-            exit 1
+            printf "::debug::=> %s\n" "Checking permissions of entrypoint" ;
+            if [ -r "${entrypoint}" ] || [ -f "${entrypoint}" ] ; then
+              printf "::debug::..=> %s\n" "Entrypoint found but it has incorrect permissions" ;
+              printf "::error title='BUG'::%s\n" "Incorrect permissions for anyvm-in-ci entrypoint (This is a BUG)" ;
+              unset entrypoint 2>/dev/null || true ;
+              exit 1
+            else
+              printf "::debug::..=> %s\n" "Checking for any entrypoint" ;
+              if [ -e "${entrypoint}" ] ; then
+                printf "::debug::....=> %s\n" "Entrypoint found but is not something we can invoke" ;
+                printf "::error title='BUG'::%s\n" "Invalid anyvm-in-ci entrypoint path (Must be a file)" ;
+                unset entrypoint 2>/dev/null || true ;
+                exit 1
+              else
+                printf "::debug::....=> %s\n" "Entrypoint NOT found at all" ;
+                printf "::error title='BUG'::%s\n" "Missing anyvm-in-ci entrypoint (This is a BUG)" ;
+                unset entrypoint 2>/dev/null || true ;
+                exit 1
+              fi ;
+            fi ;
           fi ;
         else
           printf "::debug::%s\n" "Can't find empty action path." ;
