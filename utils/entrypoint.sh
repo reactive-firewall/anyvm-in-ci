@@ -495,12 +495,13 @@ fi
 if matches "$ANYVM_USE_VNC" "true" ; then
 	printf "::warning file='%s',title='EXPOSED':: %s\n" "${0}" "VM's VNC is exposed. This is not recommended in a CI/CD environment!"
 else
-	debug_log "=> disabling VNC in CI pipeline for improved security (--vnc off)"
+	debug_log "=> Disabling VNC in CI pipeline for improved security (--vnc off)"
 	START_ARGS+=(--vnc off)
 fi
 
-debug_log "=> Limmiting VM SSH to localhost in CI pipeline for improved security (\"$VM_SSH_HOST\")"
 VM_SSH_HOST="127.0.0.1"
+debug_log "=> Limiting VM SSH to localhost in CI pipeline for improved security (\"$VM_SSH_HOST\")"
+
 # get port robustly, default to 55555
 VM_SSH_PORT=$(sh -c 'awk -v L=49154 -v H=64535 "BEGIN{srand(); print int(L+rand()*(H-L+1))}"')
 VM_SSH_PORT="${VM_SSH_PORT:-55555}"
