@@ -162,7 +162,10 @@ if ! id "$USERNAME" >/dev/null 2>&1; then
   if command -v useradd >/dev/null 2>&1; then
     useradd -m -g "$USERGROUP" -s /bin/sh "$USERNAME" || true
   elif command -v adduser >/dev/null 2>&1; then
-    adduser -s /bin/sh -w none -f <(printf '%1s::::::%1s:%2s/%1s:/bin/sh:\n' "$USERNAME" "$USER_HOME_BASE_PATH" ) || true
+    _USER_TMP_DATA_FILE="./runner_$$.tmp"
+    printf '%1s::::::%1s:%2s/%1s:/bin/sh:\n' "$USERNAME" "$USER_HOME_BASE_PATH" > "$_USER_TMP_DATA_FILE";
+    adduser -s /bin/sh -w none -f $_USER_TMP_DATA_FILE || true
+    rm -f ${_USER_TMP_DATA_FILE} 2>/dev/null || true
   elif command -v pw >/dev/null 2>&1; then
     # FreeBSD: set default group (-g) to the new group
     pw useradd -n "$USERNAME" -m -s /bin/sh -g "$USERGROUP" -w none || true
