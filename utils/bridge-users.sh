@@ -161,11 +161,11 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 		mask_user_inputs "${USER_PUB_TFILE}";
 		debug_user_log "=> Ready to transfer user public key data to Guest VM" ;
 
-		scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || printf '::Error:: %s\n' "failed to scp create_user script"
-		scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || printf '::Error:: %s\n' "failed to scp create_user data"
-		debug_user_log "..=> Transferred" & {rm -f "$CREATE_CI_USER_SCRIPT_PATH" 2>/dev/null || true ;} & debug_user_log "..=> Waiting for user sync" &
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || printf '::Error:: %s\n' "failed to scp create_user script"
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || printf '::Error:: %s\n' "failed to scp create_user data"
+		debug_user_log "..=> Transferred" & debug_user_log "..=> Waiting for user sync" &
 
-		ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@"$BRIDGE_VM" "sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE};" || printf '::Error:: %s\n' "warning: create_user execution failed" ;
+		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE};" || printf '::Error:: %s\n' "warning: create_user execution failed" ;
 		unset USER_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
 		debug_user_log "..=> Synced"
 	else
@@ -185,7 +185,7 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 	SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $USER_KEY -o ConnectTimeout=5"
 	u_ok=1
 	for _step in 1 2 3; do
-		if ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT -o BatchMode=yes ${VM_CI_USER}@"$VM_SSH_HOST" "echo OK" >/dev/null 2>&1; then u_ok=0; break; fi
+		if ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT -o BatchMode=yes ${VM_CI_USER}@"$VM_SSH_HOST" "echo OK" >/dev/null 2>&1; then u_ok=0; break; fi
 		sleep ${_step:-1}
 	done
 	if [ $u_ok -ne 0 ]; then
@@ -197,8 +197,11 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 	# best effort cleanup
 	rm -f "$CREATE_CI_USER_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
 fi;
-unset VM
+unset BRIDGE_VM
+unset BRIDGE_VM_PORT
+unset BRIDGE_DATA_DIR
 unset CREATE_CI_USER_SCRIPT_PATH
+unset VM_CI_USER
 unset debug_user_log || true
 unset mask_user_inputs || true
 
