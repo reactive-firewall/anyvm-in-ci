@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# SPDX-License-Identifier: BSD-3-Clause OR MIT
+# SPDX-License-Identifier: BSD-0-Clause OR MIT-0
 #
 # Disclaimer of Warranties.
 # A. YOU EXPRESSLY ACKNOWLEDGE AND AGREE THAT, TO THE EXTENT PERMITTED BY
@@ -63,101 +63,47 @@
 #    even if the above stated remedy fails of its essential purpose.
 ################################################################################
 
-# default "safe" ENVs (albeit for ssh less is probably more secure)
-ENV_INPUTS="${INPUT_ENVS:-CI_REPO CI_COMMIT_SHA VCS_BRANCH_NAME}"
-ENV_INPUTS="$ENV_INPUTS PYTHONUTF8 PYTHONCOERCECLOCALE PYTHONDONTWRITEBYTECODE PYTHON_VERSION"
-ENV_INPUTS="$ENV_INPUTS GUEST_USER GUEST_UID"
+set -eu
 
-# helper: conditional diagnostic with message
-debug_wrapper_log(){ if [ "${DEBUG:-0}" -eq 1 ]; then printf '::debug::%s\n' "$*" ; fi; }
+if [ -f /etc/ssh/sshd_config ]; then
 
-SAFE_GITHUB_LIST='GITHUB_ACTION GITHUB_ACTIONS GITHUB_WORKFLOW GITHUB_RUN_ID GITHUB_RUN_NUMBER GITHUB_JOB GITHUB_REPOSITORY GITHUB_REPOSITORY_OWNER GITHUB_REF GITHUB_SHA GITHUB_ACTOR';
+# TODO: force AuthenticationMethods "publickey" (one public key)
+# TODO: limit LoginGraceTime to a short delay
+# TODO: set MACs to only hmac-*-etm stuff
+# TODO: tune MaxStartups (try with 6:20:24)
+# TODO: overwrite SetEnv LD_PRELOAD= (e.g., to null/empty)
 
-# Usage: build_sendenv_opts [ENV_INPUTS]
-# Returns: prints ssh options like: -o SendEnv=VAR1 -o SendEnv=VAR2 ...
-build_sendenv_opts() {
-	sendenv_opts=
-	# helper: check if a variable name is present in the environment
-	env_has() {
-		# printf to avoid external env binary in very minimal shells; use 'env' if unavailable
-		# This implementation uses 'env' if present, otherwise falls back to /bin/printenv if available.
-		if command -v env >/dev/null 2>&1; then
-			env | awk -F= '{print $1}' | grep -x -- "$1" >/dev/null 2>&1
-		else
-			printenv 2>/dev/null | awk -F= '{print $1}' | grep -x -- "$1" >/dev/null 2>&1
-		fi
-	}
+  for _SSHD_CONFIG_REQ_ENTITY in 'PasswordAuthentication no' \
+    'IgnoreRhosts yes' \
+    'IgnoreUserKnownHosts yes' \
+    'RekeyLimit default 1h30m' \
+    'X11Forwarding no'; do
+    # Harden against PasswordAuthentication (as they might be empty in CI/CD)
+    if [ -w /etc/ssh/sshd_config ]; then
+      if command -v grep >/dev/null 2>&1; then
+      if [ $(grep -q -F -c -e "${_SSHD_CONFIG_REQ_ENTITY}" /etc/ssh/sshd_config) -lt 1 ]; then
+        printf '\n\n%s\n' "${_SSHD_CONFIG_REQ_ENTITY:-}" >> /etc/ssh/sshd_config || true ;
+        printf "::debug::%s\n" "Hardened sshd config" ;
+      fi;
+      else
+      printf "::debug::%s\n" "Unable to check config (will skip changes)" ;
+      fi;
+    fi; # [ -w /etc/ssh/sshd_config ]
+  done ;
 
-	for gv in $SAFE_GITHUB_LIST; do
-		if env_has "$gv"; then
-			sendenv_opts="$sendenv_opts -o SendEnv=$gv"
-		fi
-	done
+  # Drop Root access
+  if [ -w /etc/ssh/sshd_config ]; then
+    if command -v grep >/dev/null 2>&1; then
+      if [ $(grep -q -E -c -e "^\s*[P][e][r][m][i][t][Rr][o]{2}[t][Ll][o][g][i][n]\s+" /etc/ssh/sshd_config) -lt 1 ]; then
+        printf "\n# Restrict root user\nPermitRootLogin prohibit-password\n" >> /etc/ssh/sshd_config || true ;
+      fi;
+      if [ $(grep -q -F -c -e "DenyUsers root" /etc/ssh/sshd_config) -lt 1 ]; then
+        printf "\n\n# Prevent ROOT ACCESS\nDenyUsers root" >> /etc/ssh/sshd_config || true ;
+      fi;
+      printf "::debug::%s\n" "Hardened sshd root config" ;
+    else
+      printf "::debug::%s\n" "Unable to check config (will skip changes)" ;
+    fi;
+  fi;
 
-	# second argument or ENV_INPUTS env var may provide extra names (space-separated)
-	ENV_INPUTS_ARG=${1:-$ENV_INPUTS}
-	if [ -n "$ENV_INPUTS_ARG" ]; then
-		for name in $ENV_INPUTS_ARG; do
-			# sanitize to [A-Za-z0-9_]
-			name_clean=$(printf '%s' "$name" | sed 's/[^A-Za-z0-9_]//g')
-			[ -z "$name_clean" ] && continue
-			if env_has "$name_clean"; then
-				sendenv_opts="$sendenv_opts -o SendEnv=$name_clean"
-			fi
-		done
-	fi
-
-	# Print result (caller can capture with var=$(build_sendenv_opts) or use eval)
-	printf '%s' "$sendenv_opts"
-}
-
-SSH_EXIT_CODE=0
-# check that the EPHEM_KEY is useable
-if [ -n "${EPHEM_KEY:-}" ]; then
-	debug_wrapper_log "Checking for SSH Identity" ;
-	if [ -e "${EPHEM_KEY}" ] || [ -f "${EPHEM_KEY}.pub" ]; then
-		debug_wrapper_log "=> Found ephemeral key on disk." ;
-		if [ -r "${EPHEM_KEY}" ]; then
-			debug_wrapper_log "..=> Found ${EPHEM_KEY}" ;
-		elif [ -f "${EPHEM_KEY}" ] || [ -e "${EPHEM_KEY}.pub" ]; then
-			debug_wrapper_log "..=> Found ephemeral key.pub file." ;
-			debug_wrapper_log "....=> Trying to apply permission corrections" ;
-			# TODO: add -v if in debug mode
-			chmod 600 "${EPHEM_KEY}" || SSH_EXIT_CODE=77 ;
-			if [ ${SSH_EXIT_CODE} -eq 0 ] && [ -r "${EPHEM_KEY}" ]; then
-				debug_wrapper_log "......=> Fixed ${EPHEM_KEY} keyfile" ;
-			else
-				debug_wrapper_log "....=> Applying corrections Unsuccessful" ;
-				SSH_EXIT_CODE=77 ;
-			fi ;
-		else
-			debug_wrapper_log "..=> Missing Ephemeral keyfile" ;
-			SSH_EXIT_CODE=66 ;
-		fi ;
-	else
-		debug_wrapper_log "..=> Missing SSH Identity" ;
-		SSH_EXIT_CODE=66 ;
-	fi ;
-fi ;
-
-if [ SSH_EXIT_CODE -eq 0 ]; then
-	# Check working directory
-	GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
-	# Build SSH arguments
-	SSH_EPHEMERAL_ROOT_OPTS="" # reset each time to avoid mis-re-use
-	SSH_EPHEMERAL_ROOT_OPTS=$(build_sendenv_opts);
-	SSH_EPHEMERAL_ROOT_OPTS="$SSH_EPHEMERAL_ROOT_OPTS -o BatchMode=yes -o EscapeChar=none -e none -l ${GUEST_USER}"
-	# TODO: ephemerally cache new hosts via:
-	# -o UserKnownHostsFile=${ANYVM_SSH_KNOWN_HOSTS_PATH:-/dev/null}
-	SSH_EPHEMERAL_ROOT_OPTS="$SSH_EPHEMERAL_ROOT_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-	ssh $SSH_EPHEMERAL_ROOT_OPTS -p ${VM_SSH_PORT:-22} -i $EPHEM_KEY "root@${VM_SSH_HOST:-}" "cd \"${GITHUB_WS}\"; $@" ;
-	SSH_EXIT_CODE=$?;
-fi ;
-
-#cleanup
-unset build_sendenv_opts
-unset ENV_INPUTS
-unset GITHUB_WS
-# reset each time to avoid mis-re-use
-unset SSH_EPHEMERAL_ROOT_OPTS
-exit ${SSH_EXIT_CODE:-255}
+fi;  # [ -f /etc/ssh/sshd_config ]

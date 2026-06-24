@@ -150,7 +150,7 @@ if [ SSH_EXIT_CODE -eq 0 ]; then
 	# TODO: ephemerally cache new hosts via:
 	# -o UserKnownHostsFile=${ANYVM_SSH_KNOWN_HOSTS_PATH:-/dev/null}
 	SSH_EPHEMERAL_USER_OPTS="$SSH_EPHEMERAL_USER_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-	ssh $SSH_EPHEMERAL_USER_OPTS -p ${VM_SSH_PORT:-22} -i $USER_KEY "${GUEST_USER:-runner}@${VM_SSH_HOST:-}" "cd \"${GITHUB_WS}\"; $@"
+	ssh $SSH_EPHEMERAL_USER_OPTS -p ${VM_SSH_PORT:-22} -i $USER_KEY "${GUEST_USER:-runner}@${VM_SSH_HOST:-}" "cd \"${GITHUB_WS}\"; $@" ;
 	SSH_EXIT_CODE=$?;
 fi ;
 

@@ -595,7 +595,7 @@ if matches "$VM_USER_CREATE" "true"; then
 	# TODO: match the UID of GUEST_USER
 	debug_log "Cloning CI user to guest VM"
 	if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-users.sh" ]; then
-		USER_KEY="${USER_KEY}" GUEST_USER="${GUEST_USER:-runner}" GUEST_UID="${GUEST_UID:-}" DATA_DIR="${DATA_DIR}"  ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" DEBUG="${DEBUG:-}" \
+		USER_KEY="${USER_KEY}" GUEST_USER="${GUEST_USER:-runner}" GUEST_UID="${GUEST_UID:-}" DATA_DIR="${DATA_DIR}" ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" DEBUG="${DEBUG:-}" \
 		"${ANYVM_UTIL_PATH_ARG}/bridge-users.sh"
 	fi
 	# TODO: choose a consistent term: synced or cloned or bridged
@@ -663,7 +663,14 @@ if [ -n "${INPUT_RUN:-}" ]; then
 	printf "\n::endgroup::\n" ;
 fi
 
-# 10. TODO: optional copyback logic
+# 10. optional copyback logic
+if matches "$SYNC_METHOD" "rsync"; then
+	rsync -a --delete -e "ssh -p $VM_SSH_PORT -i ${RSYNC_KEY} -o BatchMode=yes -o EscapeChar=none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$GITHUB_WS/" "$GITHUB_WS/"
+else
+	# Use trailing slash and /* glob to copy contents, not the directory itself
+	scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" $SSH_EPHEMERAL_OPTS "root@${VM_SSH_HOST}:$GITHUB_WS/*" "$GITHUB_WS/"
+fi
+
 
 # 10b afterwards
 if [ -n "${INPUT_AFTERWARDS:-}" ]; then

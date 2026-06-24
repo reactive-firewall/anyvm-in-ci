@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# SPDX-License-Identifier: BSD-3-Clause OR MIT
+# SPDX-License-Identifier: BSD-0-Clause OR MIT-0
 #
 # Disclaimer of Warranties.
 # A. YOU EXPRESSLY ACKNOWLEDGE AND AGREE THAT, TO THE EXTENT PERMITTED BY
@@ -65,8 +65,12 @@
 
 set -eu
 
-USERNAME="${1:-CI}"
-USER_PUB="${2:-}"
+# read inputs
+USERNAME="${1:-runner}"
+USER_PUB_IN="${2:-}"
+
+# helper: conditional diagnostic with message
+debug_remote_log(){ if [ "${DEBUG:-0}" -eq 1 ]; then printf '::debug::%s\n' "$*" ; fi; }
 
 is_ssh_pubkey_line() {
   # Accept common SSH public key prefixes only (shape check).
@@ -104,11 +108,11 @@ normalize_and_validate_input() {
   if [ -n "$in" ] && [ -f "$in" ] && [ -r "$in" ]; then
     NEW_PUB="$(read_pub_from_file "$in")"
     if [ -z "${NEW_PUB:-}" ]; then
-      echo "Error: key file was empty or unreadable." >&2
+      printf "::error title='USER-ERR':: %s\n" "Error: key file was empty or unreadable." >&2
       exit 1
     fi
     if ! is_ssh_pubkey_line "$NEW_PUB"; then
-      echo "Error: file contents do not look like an SSH public key." >&2
+      printf "::error title='USER-ERR':: %s\n" "Error: file contents do not look like an SSH public key." >&2
       exit 1
     fi
     printf '%s\n' "$NEW_PUB"
@@ -117,7 +121,7 @@ normalize_and_validate_input() {
 
   # Otherwise $in is presumed to be the key string; validate shape.
   if [ -z "$in" ] || ! is_ssh_pubkey_line "$in"; then
-    echo "Error: input does not look like an SSH public key." >&2
+    printf "::error title='USER-ERR':: %s\n" "Error: input does not look like an SSH public key." >&2
     exit 1
   fi
 
@@ -125,7 +129,7 @@ normalize_and_validate_input() {
   # POSIX sh: use set -- to split on IFS (whitespace).
   set -- $in
   if [ $# -lt 2 ]; then
-    echo "Error: SSH public key must contain at least 2 fields (type and blob)." >&2
+    printf "::error title='USER-ERR':: %s\n" "Error: SSH public key must contain at least 2 fields (type and blob)." >&2
     exit 1
   fi
 
@@ -135,7 +139,7 @@ normalize_and_validate_input() {
   # If your system lacks grep -E, this still works with basic grep.
   case "$blob" in
     ''|*[!A-Za-z0-9+/=]*)
-      echo "Error: SSH public key blob doesn't look base64-ish." >&2
+      printf "::error title='USER-ERR':: %s\n" "Error: SSH public key blob doesn't look base64-ish." >&2
       exit 1
       ;;
   esac
@@ -143,18 +147,25 @@ normalize_and_validate_input() {
   printf '%s\n' "$in"
 }
 
-USER_PUB="$(normalize_and_validate_input "$IN")"
+debug_remote_log "Syncing user to VM" ;
+# Normalize input public key (blob or file-path)
+USER_PUB="$(normalize_and_validate_input "${USER_PUB_IN:-}")"
+USERGROUP="${USERNAME:-runner}"
+USER_HOME_BASE_PATH="${USER_HOME_BASE_PATH:-/home}"  # or could be '/Users'
+# early cleanup of raw input
+unset USER_PUB_IN 2>/dev/null || true ;
 
 # create user group (same name) + user: try useradd/useradd-alternate/adduser/pw
 if ! id "$USERNAME" >/dev/null 2>&1; then
   # create group first (if missing)
-  if ! getent group "$USERNAME" >/dev/null 2>&1; then
+  debug_remote_log "Creating empty usergroup ($USERGROUP)" ;
+  if ! getent group "$USERGROUP" >/dev/null 2>&1; then
     if command -v groupadd >/dev/null 2>&1; then
-      groupadd "$USERNAME" || true
+      groupadd "$USERGROUP" || true
     elif command -v addgroup >/dev/null 2>&1; then
-      addgroup "$USERNAME" || true
+      addgroup "$USERGROUP" || true
     elif command -v pw >/dev/null 2>&1; then
-      pw groupadd "$USERNAME" || true
+      pw groupadd "$USERGROUP" || true
     else
       # fall back: best-effort, no-op if we can't create groups
       true
@@ -162,26 +173,60 @@ if ! id "$USERNAME" >/dev/null 2>&1; then
   fi
 
   # create user
+  debug_remote_log "Creating empty user ($USERNAME)" ;
   if command -v useradd >/dev/null 2>&1; then
-    useradd -m -g "$USERNAME" -s /bin/sh "$USERNAME" || true
+    useradd -m -g "$USERGROUP" -s /bin/sh "$USERNAME" || true
   elif command -v adduser >/dev/null 2>&1; then
-    adduser -D -s /bin/sh --ingroup "$USERNAME" "$USERNAME" || true
+    adduser -D -s /bin/sh --ingroup "$USERGROUP" "$USERNAME" || true
   elif command -v pw >/dev/null 2>&1; then
     # FreeBSD: set default group (-g) to the new group
-    pw useradd -n "$USERNAME" -m -s /bin/sh -g "$USERNAME" || true
+    pw useradd -n "$USERNAME" -m -s /bin/sh -g "$USERGROUP" || true
   fi
 fi
 
-mkdir -p /home/"$USERNAME"/.ssh
-printf '%s\n' "$USER_PUB" > /home/"$USERNAME"/.ssh/authorized_keys
-chmod 600 /home/"$USERNAME"/.ssh/authorized_keys
-chown -R "$USERNAME":"$USERNAME" /home/"$USERNAME"/.ssh || true
+debug_remote_log "Configuring user SSH key pair" ;
+
+mkdir -p "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh || true
+printf '%s\n' "$USER_PUB" > "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh/authorized_keys ;
+chmod 600 "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh/authorized_keys
+chmod 700 "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh
+chown -R "$USERNAME":"$USERGROUP" "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh || true
+
+debug_remote_log "SSH user key-pair configured" &
+debug_remote_log "Attempting to harden rest of user configuration" ;
+
+# harden rest of config
+for _purge_rfile in hosts.equiv shosts.equiv ; do
+  if [ -f /etc//"$_purge_rfile" ]; then
+    debug_remote_log "found /etc/$_rpurge_file (will remove)" ;
+    rm -f /etc/"$_rpurge_file" || true ;
+  fi
+done
+
+for _purge_file in .rhosts .shosts ; do
+  if [ -f "$USER_HOME_BASE_PATH"/"$USERNAME"/"$_purge_file" ]; then
+    debug_remote_log "found ~/$_purge_file (will remove)" ;
+    rm -f "$USER_HOME_BASE_PATH"/"$USERNAME"/"$_purge_file" || true ;
+  fi
+done
+
+# Check if the line "Banner" is configured in /etc/ssh/sshd_config
+if command -v grep >/dev//null 2>&1; then
+  if [ $(grep -q -E -c -e "^\s*[B][a][n]{2}[e][r].+$" /etc/ssh/sshd_config 2>/dev/null) -ge 1 ]; then
+    printf "# reduce noise for CI logs\n" > "$USER_HOME_BASE_PATH"/"$USERNAME"/.hushlogin || true ;
+  fi
+fi
 
 unset USER_PUB 2>/dev/null || true
 
 # Ensure FreeBSD wheel handling + group membership (default group + supplementary)
 if command -v pw >/dev/null 2>&1; then
-  pw usermod "$USERNAME" -g "$USERNAME" -G wheel,"$USERNAME" || true
+  pw usermod "$USERNAME" -g "$USERGROUP" -G wheel,"$USERNAME" || true
 fi
 
-printf '%s\n' "CI user synced to VM"
+# cleanup
+unset USERGROUP
+unset USERNAME
+unset USER_HOME_BASE_PATH
+
+printf '%s\n' "CI user ${USERNAME:-} synced to VM"

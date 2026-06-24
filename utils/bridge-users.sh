@@ -127,6 +127,44 @@ mask_user_inputs() {
   done
 }
 
+# Usage: build_user_sendenv_opts [ENV_INPUTS]
+# Returns: prints ssh options like: -o SendEnv=VAR1 -o SendEnv=VAR2 ...
+build_user_sendenv_opts() {
+	sendenv_opts=
+	# helper: check if a variable name is present in the environment
+	env_has() {
+		# printf to avoid external env binary in very minimal shells; use 'env' if unavailable
+		# This implementation uses 'env' if present, otherwise falls back to /bin/printenv if available.
+		if command -v env >/dev/null 2>&1; then
+			env | awk -F= '{print $1}' | grep -x -- "$1" >/dev/null 2>&1
+		else
+			printenv 2>/dev/null | awk -F= '{print $1}' | grep -x -- "$1" >/dev/null 2>&1
+		fi
+	}
+
+	for gv in $SAFE_GITHUB_LIST; do
+		if env_has "$gv"; then
+			sendenv_opts="$sendenv_opts -o SendEnv=$gv"
+		fi
+	done
+
+	# second argument or ENV_INPUTS env var may provide extra names (space-separated)
+	ENV_INPUTS_ARG=${1:-$ENV_INPUTS}
+	if [ -n "$ENV_INPUTS_ARG" ]; then
+		for name in $ENV_INPUTS_ARG; do
+			# sanitize to [A-Za-z0-9_]
+			name_clean=$(printf '%s' "$name" | sed 's/[^A-Za-z0-9_]//g')
+			[ -z "$name_clean" ] && continue
+			if env_has "$name_clean"; then
+				sendenv_opts="$sendenv_opts -o SendEnv=$name_clean"
+			fi
+		done
+	fi
+
+	# Print result (caller can capture with var=$(build_sendenv_opts) or use eval)
+	printf '%s' "$sendenv_opts"
+}
+
 # TODO: verify ANYVM_CREATE_CI_USER_FILE is a file that exists
 if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 	debug_user_log "Preparing script to clone user on to Guest VM" ;
@@ -180,12 +218,12 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 
 	debug_user_log "=> Will now try ephemeral user key pair"
 
-	SSH_EPHEMERAL_OPTS=$(build_sendenv_opts);
+	SSH_USER_EPHEMERAL_OPTS=$(build_user_sendenv_opts);
 	# verify ephemeral works (try a few times)
-	SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $USER_KEY -o ConnectTimeout=5"
+	SSH_USER_EPHEMERAL_OPTS="$SSH_USER_EPHEMERAL_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $USER_KEY -o ConnectTimeout=5"
 	u_ok=1
 	for _step in 1 2 3; do
-		if ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT -o BatchMode=yes ${VM_CI_USER}@"$VM_SSH_HOST" "echo OK" >/dev/null 2>&1; then u_ok=0; break; fi
+		if ssh $SSH_USER_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT -o BatchMode=yes ${VM_CI_USER}@"$BRIDGE_VM" "echo OK" >/dev/null 2>&1; then u_ok=0; break; fi
 		sleep ${_step:-1}
 	done
 	if [ $u_ok -ne 0 ]; then
@@ -202,6 +240,8 @@ unset BRIDGE_VM_PORT
 unset BRIDGE_DATA_DIR
 unset CREATE_CI_USER_SCRIPT_PATH
 unset VM_CI_USER
+unset SSH_USER_EPHEMERAL_OPTS
+unset build_user_sendenv_opts || true
 unset debug_user_log || true
 unset mask_user_inputs || true
 
