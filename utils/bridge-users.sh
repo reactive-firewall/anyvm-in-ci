@@ -149,7 +149,7 @@ build_user_sendenv_opts() {
 	done
 
 	# second argument or ENV_INPUTS env var may provide extra names (space-separated)
-	ENV_INPUTS_ARG=${1:-$ENV_INPUTS}
+	ENV_INPUTS_ARG=${1:-${ENV_INPUTS:-}}
 	if [ -n "$ENV_INPUTS_ARG" ]; then
 		for name in $ENV_INPUTS_ARG; do
 			# sanitize to [A-Za-z0-9_]

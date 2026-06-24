@@ -181,6 +181,12 @@ chmod 700 "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh
 chown -R "$USERNAME":"$USERGROUP" "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh || true
 
 debug_remote_log "SSH user key-pair configured" &
+
+# debug_remote_log "Configuring VM user configuration" ;
+# TODO: need to handle rest of https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables
+# each value should be at-least set to a reasonable default in the startup rc so that the work
+
+
 debug_remote_log "Attempting to harden rest of user configuration" ;
 
 # harden rest of config
@@ -200,9 +206,11 @@ done
 
 # Check if the line "Banner" is configured in /etc/ssh/sshd_config
 if command -v grep >/dev/null 2>&1; then
-  if [ $(grep -q -E -c -e "^\s*[B][a][n]{2}[e][r].+$" /etc/ssh/sshd_config 2>/dev/null) -ge 1 ]; then
+  _GREP_CHECK=$(grep -q -E -c -e "^\s*[B][a][n]{2}[e][r].+$" /etc/ssh/sshd_config 2>/dev/null);
+  if [ "${_GREP_CHECK:-0}" -ge 1 ]; then
     printf "# reduce noise for CI logs\n" > "$USER_HOME_BASE_PATH"/"$USERNAME"/.hushlogin || true ;
   fi
+  unset _GREP_CHECK 2>/dev/null || true
 fi
 
 unset USER_PUB 2>/dev/null || true
