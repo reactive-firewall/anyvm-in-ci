@@ -221,8 +221,3 @@ if command -v pw >/dev/null 2>&1; then
 fi
 
 printf '%s\n' "CI user ${USERNAME:-} synced to VM" ;
-
-# cleanup
-unset USERGROUP
-unset USERNAME
-unset USER_HOME_BASE_PATH

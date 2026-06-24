@@ -177,7 +177,7 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 	debug_user_log "Ready to transfer \"${CREATE_CI_USER_SCRIPT_PATH}\" to Guest VM" &
 
 	debug_user_log "Generating VM User keys" ;
-	ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -V -1m:+6h -C "${GUEST_USER:-'runner[bot]'}@users.noreply.github.com" >/dev/null || printf "::error title='FAILED'::%s\n" "Failed to generate ephemeral user keys"
+	ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -V -1m:+6h -C "${GUEST_USER:-runner}[bot]@users.noreply.github.com" >/dev/null || printf "::error title='FAILED'::%s\n" "Failed to generate ephemeral user keys"
 	debug_user_log "Checking for new ephemeral user key pair"
 
 	if [ ! -f "$USER_KEY" ] || [ ! -f "$USER_KEY.pub" ]; then
@@ -199,25 +199,25 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 		mask_user_inputs "${USER_PUB_TFILE}";
 		debug_user_log "=> Ready to transfer user public key data to Guest VM" ;
 
-		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || printf '::Error:: %s\n' "failed to scp create_user script"
-		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || printf '::Error:: %s\n' "failed to scp create_user data"
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || printf '::error:: %s\n' "failed to scp create_user script"
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || printf '::error:: %s\n' "failed to scp create_user data"
 		debug_user_log "..=> Transferred" & debug_user_log "..=> Waiting for user sync" &
 
-		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE};" || printf '::Error:: %s\n' "warning: create_user execution failed" ;
-		unset USER_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
+		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}" || printf '::error:: %s\n' "warning: create_user execution failed with $?" ;
 		debug_user_log "..=> Synced"
+		unset USER_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
 	else
 	  printf '::warning:: %s\n' "/etc/hosts not found locally; nothing to do." >&2
 	  debug_user_log "Nothing transferred"
 	fi
 
-	debug_user_log "=> Attempt to drop root access" &
-	SSH_EPHEMERAL_OPTS="";
-	unset SSH_EPHEMERAL_OPTS;
+	# debug_user_log "=> Attempt to drop root access" &
+	# SSH_EPHEMERAL_OPTS="";
+	# unset SSH_EPHEMERAL_OPTS;
 	# TODO: deal with root keys more securely
 
 	debug_user_log "=> Will now try ephemeral user key pair"
-
+	SSH_USER_EPHEMERAL_OPTS="";
 	SSH_USER_EPHEMERAL_OPTS=$(build_user_sendenv_opts);
 	# verify ephemeral works (try a few times)
 	SSH_USER_EPHEMERAL_OPTS="$SSH_USER_EPHEMERAL_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $USER_KEY -o ConnectTimeout=5"
@@ -227,7 +227,8 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 		sleep ${_step:-1}
 	done
 	if [ $u_ok -ne 0 ]; then
-		printf '::Error:: %s\n' "warning: ephemeral key login failed; continuing with subsequent steps will fail"
+		printf '::error:: %s\n' "warning: ephemeral key login failed; continuing with subsequent steps will fail"
+		exit 1;
 	else
 		debug_user_log "User and Keys successfully configured"
 	fi
