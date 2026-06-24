@@ -157,30 +157,15 @@ unset USER_PUB_IN 2>/dev/null || true ;
 
 # create user group (same name) + user: try useradd/useradd-alternate/adduser/pw
 if ! id "$USERNAME" >/dev/null 2>&1; then
-  # create group first (if missing)
-  debug_remote_log "Creating empty usergroup ($USERGROUP)" ;
-  if ! getent group "$USERGROUP" >/dev/null 2>&1; then
-    if command -v groupadd >/dev/null 2>&1; then
-      groupadd "$USERGROUP" || true
-    elif command -v addgroup >/dev/null 2>&1; then
-      addgroup "$USERGROUP" || true
-    elif command -v pw >/dev/null 2>&1; then
-      pw groupadd "$USERGROUP" || true
-    else
-      # fall back: best-effort, no-op if we can't create groups
-      true
-    fi
-  fi
-
   # create user
   debug_remote_log "Creating empty user ($USERNAME)" ;
   if command -v useradd >/dev/null 2>&1; then
     useradd -m -g "$USERGROUP" -s /bin/sh "$USERNAME" || true
   elif command -v adduser >/dev/null 2>&1; then
-    adduser -D -s /bin/sh --ingroup "$USERGROUP" "$USERNAME" || true
+    adduser -s /bin/sh -w none -f <(printf '%1s::::::%1s:%2s/%1s:/bin/sh:\n' "$USERNAME" "$USER_HOME_BASE_PATH" ) || true
   elif command -v pw >/dev/null 2>&1; then
     # FreeBSD: set default group (-g) to the new group
-    pw useradd -n "$USERNAME" -m -s /bin/sh -g "$USERGROUP" || true
+    pw useradd -n "$USERNAME" -m -s /bin/sh -g "$USERGROUP" -w none || true
   fi
 fi
 
