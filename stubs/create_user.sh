@@ -184,8 +184,8 @@ debug_remote_log "SSH user key-pair configured" &
 debug_remote_log "Attempting to harden rest of user configuration" ;
 
 # harden rest of config
-for _purge_rfile in hosts.equiv shosts.equiv ; do
-  if [ -f /etc//"$_purge_rfile" ]; then
+for _rpurge_rfile in hosts.equiv shosts.equiv ; do
+  if [ -f /etc/"$_rpurge_rfile" ]; then
     debug_remote_log "found /etc/$_rpurge_file (will remove)" ;
     rm -f /etc/"$_rpurge_file" || true ;
   fi
@@ -199,7 +199,7 @@ for _purge_file in .rhosts .shosts ; do
 done
 
 # Check if the line "Banner" is configured in /etc/ssh/sshd_config
-if command -v grep >/dev//null 2>&1; then
+if command -v grep >/dev/null 2>&1; then
   if [ $(grep -q -E -c -e "^\s*[B][a][n]{2}[e][r].+$" /etc/ssh/sshd_config 2>/dev/null) -ge 1 ]; then
     printf "# reduce noise for CI logs\n" > "$USER_HOME_BASE_PATH"/"$USERNAME"/.hushlogin || true ;
   fi
@@ -212,9 +212,9 @@ if command -v pw >/dev/null 2>&1; then
   pw usermod "$USERNAME" -g "$USERGROUP" -G wheel,"$USERNAME" || true
 fi
 
+printf '%s\n' "CI user ${USERNAME:-} synced to VM" ;
+
 # cleanup
 unset USERGROUP
 unset USERNAME
 unset USER_HOME_BASE_PATH
-
-printf '%s\n' "CI user ${USERNAME:-} synced to VM"
