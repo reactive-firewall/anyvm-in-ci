@@ -184,10 +184,10 @@ debug_remote_log "SSH user key-pair configured" &
 debug_remote_log "Attempting to harden rest of user configuration" ;
 
 # harden rest of config
-for _rpurge_rfile in hosts.equiv shosts.equiv ; do
-  if [ -f /etc/"$_rpurge_rfile" ]; then
-    debug_remote_log "found /etc/$_rpurge_file (will remove)" ;
-    rm -f /etc/"$_rpurge_file" || true ;
+for _purge_rfile in hosts.equiv shosts.equiv ; do
+  if [ -f /etc/"$_purge_rfile" ]; then
+    debug_remote_log "found /etc/$_purge_rfile (will remove)" ;
+    rm -f /etc/"$_purge_rfile" || true ;
   fi
 done
 
