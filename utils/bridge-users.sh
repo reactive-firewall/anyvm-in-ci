@@ -64,6 +64,9 @@
 ################################################################################
 
 test -x "$(command -v scp)" || exit 126 ;
+test -x "$(command -v ssh)" || exit 126 ;
+test -x "$(command -v ssh-keygen)" || exit 126 ;
+test -x "$(command -v openssl)" || exit 126 ;
 set -eu
 
 # create_user.sh
@@ -99,6 +102,8 @@ BRIDGE_VM="${VM_SSH_HOST:-127.0.0.1}"
 BRIDGE_VM_PORT="${VM_SSH_PORT:-22}"
 VM_CI_USER="${GUEST_USER:-runner}"
 USER_KEY="${USER_KEY:-}"
+EPHEM_KEY_TYPE="${EPHEM_KEY_TYPE:-rsa}"
+EPHEM_KEY_BITS="${EPHEM_KEY_BITS:-3072}"
 
 # helper: conditional diagnostic with message
 debug_user_log(){ if [ "${DEBUG:-0}" -eq 1 ]; then printf '::debug:: %s\n' "$*"; fi; }
@@ -123,73 +128,75 @@ mask_user_inputs() {
 }
 
 # TODO: verify ANYVM_CREATE_CI_USER_FILE is a file that exists
-debug_user_log "Preparing script to clone user on to Guest VM" ;
-CREATE_CI_USER_SCRIPT_PATH="$BRIDGE_DATA_DIR/create_user_$$.sh"
-# TODO: add -v only in debug mode
-cp -f "${ANYVM_CREATE_CI_USER_FILE}" "$CREATE_CI_USER_SCRIPT_PATH"
-debug_user_log "=> Staged" & debug_user_log "..=> Setting Permissions on staged script" ;
-chmod +x "$CREATE_CI_USER_SCRIPT_PATH"
+if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
+	debug_user_log "Preparing script to clone user on to Guest VM" ;
+	CREATE_CI_USER_SCRIPT_PATH="$BRIDGE_DATA_DIR/create_user_$$.sh"
+	# TODO: add -v only in debug mode
+	cp -f "${ANYVM_CREATE_CI_USER_FILE}" "$CREATE_CI_USER_SCRIPT_PATH"
+	debug_user_log "=> Staged" & debug_user_log "..=> Setting Permissions on staged script" ;
+	chmod +x "$CREATE_CI_USER_SCRIPT_PATH"
 
-debug_user_log "Ready to transfer \"${CREATE_CI_USER_SCRIPT_PATH}\" to Guest VM" ;
+	debug_user_log "Ready to transfer \"${CREATE_CI_USER_SCRIPT_PATH}\" to Guest VM" &
 
-debug_user_log "Generating VM User keys" ;
-ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -V -1m:+6h -C "${GUEST_USER:-runner}[bot]@users.noreply.github.com" >/dev/null || printf "::error title='FAILED'::%s\n" "Failed to generate ephemeral user keys"
-debug_user_log "Checking for new ephemeral user key pair"
+	debug_user_log "Generating VM User keys" ;
+	ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -V -1m:+6h -C "${GUEST_USER:-'runner[bot]'}@users.noreply.github.com" >/dev/null || printf "::error title='FAILED'::%s\n" "Failed to generate ephemeral user keys"
+	debug_user_log "Checking for new ephemeral user key pair"
 
-if [ ! -f "$USER_KEY" ] || [ ! -f "$USER_KEY.pub" ]; then
-	debug_user_log "=> Can not find new ephemeral user keys"
-	printf '%s\n' "warning: ephemeral user key pair not found at $USER_KEY / $USER_KEY.pub; Configuring SSH steps WILL fail"
-else
-	debug_user_log "=> Found new ephemeral user keys"
-	# TODO: check that found keys are indeed a pair
-	ssh-keygen -lf "$USER_KEY.pub"
-fi
+	if [ ! -f "$USER_KEY" ] || [ ! -f "$USER_KEY.pub" ]; then
+		debug_user_log "=> Can not find new ephemeral user keys"
+		printf '::warning:: %s\n' "warning: ephemeral user key pair not found at $USER_KEY / $USER_KEY.pub; Configuring SSH steps WILL fail"
+	else
+		debug_user_log "=> Found new ephemeral user keys"
+		# TODO: check that found keys are indeed a pair
+		ssh-keygen -lf "$USER_KEY.pub"
+	fi
 
-USER_PUB_CONTENT="$(cat ${USER_KEY}.pub)"
-mask_user_inputs "$USER_PUB_CONTENT";
+	USER_PUB_CONTENT="$(cat ${USER_KEY}.pub)"
+	mask_user_inputs "$USER_PUB_CONTENT";
 
-# 4d. copy rotation script and run it using baked key (best-effort)
-if [ -f "$USER_KEY" ]; then
-	debug_user_log "=> Waiting for transfer" ;
-	USER_PUB_TFILE=$(printf '%s\n' "$RANDOM$RANDOM$RANDOM$RANDOM" | openssl dgst -sha256 - | cut -d\= -f 2-2 | tr -d ' ' | head -n1)
-	mask_user_inputs "${USER_PUB_TFILE}";
-	debug_user_log "=> Ready to transfer user public key data to Guest VM" ;
+	# 4d. copy rotation script and run it using baked key (best-effort)
+	if [ -f "$USER_KEY" ]; then
+		debug_user_log "=> Waiting for transfer" ;
+		USER_PUB_TFILE=$(printf '%s\n' "$RANDOM$RANDOM$RANDOM$RANDOM" | openssl dgst -sha256 - | cut -d\= -f 2-2 | tr -d ' ' | head -n1)
+		mask_user_inputs "${USER_PUB_TFILE}";
+		debug_user_log "=> Ready to transfer user public key data to Guest VM" ;
 
-	scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || printf '::Error:: %s\n' "failed to scp create_user script"
-	scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || printf '::Error:: %s\n' "failed to scp create_user data"
-	debug_user_log "..=> Transferred" & {rm -f "$CREATE_CI_USER_SCRIPT_PATH" 2>/dev/null || true ;} & debug_user_log "..=> Waiting for user sync" &
+		scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || printf '::Error:: %s\n' "failed to scp create_user script"
+		scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || printf '::Error:: %s\n' "failed to scp create_user data"
+		debug_user_log "..=> Transferred" & {rm -f "$CREATE_CI_USER_SCRIPT_PATH" 2>/dev/null || true ;} & debug_user_log "..=> Waiting for user sync" &
 
-	ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@"$BRIDGE_VM" "sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE};" || printf '::Error:: %s\n' "warning: create_user execution failed" ;
-	unset USER_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
-	debug_user_log "..=> Synced"
-else
-  printf '::warning:: %s\n' "/etc/hosts not found locally; nothing to do." >&2
-  debug_user_log "Nothing transferred"
-fi
+		ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@"$BRIDGE_VM" "sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE};" || printf '::Error:: %s\n' "warning: create_user execution failed" ;
+		unset USER_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
+		debug_user_log "..=> Synced"
+	else
+	  printf '::warning:: %s\n' "/etc/hosts not found locally; nothing to do." >&2
+	  debug_user_log "Nothing transferred"
+	fi
 
-debug_user_log "=> Attempt to drop root access" &
-SSH_EPHEMERAL_OPTS="";
-unset SSH_EPHEMERAL_OPTS;
-# TODO: deal with root keys more securely
+	debug_user_log "=> Attempt to drop root access" &
+	SSH_EPHEMERAL_OPTS="";
+	unset SSH_EPHEMERAL_OPTS;
+	# TODO: deal with root keys more securely
 
-debug_user_log "=> Will now try ephemeral user key pair"
+	debug_user_log "=> Will now try ephemeral user key pair"
 
-SSH_EPHEMERAL_OPTS=$(build_sendenv_opts);
-# verify ephemeral works (try a few times)
-SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $USER_KEY -o ConnectTimeout=5"
-u_ok=1
-for _step in 1 2 3; do
-	if ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT -o BatchMode=yes ${VM_CI_USER}@"$VM_SSH_HOST" "echo OK" >/dev/null 2>&1; then u_ok=0; break; fi
-	sleep ${_step:-1}
-done
-if [ $u_ok -ne 0 ]; then
-	printf '::Error:: %s\n' "warning: ephemeral key login failed; continuing with subsequent steps will fail"
-else
-	debug_user_log "User and Keys successfully configured"
-fi
+	SSH_EPHEMERAL_OPTS=$(build_sendenv_opts);
+	# verify ephemeral works (try a few times)
+	SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $USER_KEY -o ConnectTimeout=5"
+	u_ok=1
+	for _step in 1 2 3; do
+		if ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT -o BatchMode=yes ${VM_CI_USER}@"$VM_SSH_HOST" "echo OK" >/dev/null 2>&1; then u_ok=0; break; fi
+		sleep ${_step:-1}
+	done
+	if [ $u_ok -ne 0 ]; then
+		printf '::Error:: %s\n' "warning: ephemeral key login failed; continuing with subsequent steps will fail"
+	else
+		debug_user_log "User and Keys successfully configured"
+	fi
 
-# best effort cleanup
-rm -f "$CREATE_CI_USER_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
+	# best effort cleanup
+	rm -f "$CREATE_CI_USER_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
+fi;
 unset VM
 unset CREATE_CI_USER_SCRIPT_PATH
 unset debug_user_log || true

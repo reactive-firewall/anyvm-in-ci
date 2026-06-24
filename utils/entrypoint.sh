@@ -577,7 +577,7 @@ fi
 debug_log "Bridging host file to guest"
 if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh" ]; then
 	debug_log "=> Bridging via util: bridge-hosts.sh"
-	ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE}" DATA_DIR="${DATA_DIR}" SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS}" VM_SSH_HOST="${VM_SSH_HOST}" VM_SSH_PORT="${VM_SSH_PORT}" \
+	ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_BRIDGE_HOSTS_FILE}" DATA_DIR="${DATA_DIR}" SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS}" VM_SSH_HOST="${VM_SSH_HOST}" VM_SSH_PORT="${VM_SSH_PORT}" DEBUG="${DEBUG:-}" \
 	"${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh"
 else
 	# best-effort fallback
@@ -595,8 +595,8 @@ if matches "$VM_USER_CREATE" "true"; then
 	# TODO: match the UID of GUEST_USER
 	debug_log "Cloning CI user to guest VM"
 	if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-users.sh" ]; then
-		# USER_KEY="${USER_KEY}" GUEST_USER="${GUEST_USER}" DATA_DIR="${DATA_DIR}"  ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT"
-		env "${ANYVM_UTIL_PATH_ARG}/bridge-users.sh"
+		USER_KEY="${USER_KEY}" GUEST_USER="${GUEST_USER:-runner}" GUEST_UID="${GUEST_UID:-}" DATA_DIR="${DATA_DIR}"  ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" DEBUG="${DEBUG:-}" \
+		"${ANYVM_UTIL_PATH_ARG}/bridge-users.sh"
 	fi
 	# TODO: choose a consistent term: synced or cloned or bridged
 	debug_log "CI user cloned to guest"
