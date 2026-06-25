@@ -639,26 +639,37 @@ debug_log "Bootstrap done"
 # 6. recreate full GITHUB_WORKSPACE path and rsync content
 GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
 
-debug_log "Replicating ${GITHUB_WS} to Guest VM"
-
-# ensure destination exists and owned by guest user if present
-ssh ${SSH_EPHEMERAL_OPTS} -p $VM_SSH_PORT root@${VM_SSH_HOST} "mkdir -p '$GITHUB_WS' && chown -R '${GUEST_USER}:${GUEST_USER}' '$GITHUB_WS'" || true
-if matches "$SYNC_METHOD" "rsync"; then
-	GUEST_RSYNC_USER="${GUEST_USER:-runner}"
-	RSYNC_KEY="${USER_KEY:-$EPHEM_KEY}"
-	RSYNC_EPHEMERAL_OPTS=$(build_sendenv_opts);
-	RSYNC_EPHEMERAL_OPTS="$RSYNC_EPHEMERAL_OPTS -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $RSYNC_KEY -o ConnectTimeout=35"
-	rsync -a --delete -e "ssh ${RSYNC_EPHEMERAL_OPTS} -p $VM_SSH_PORT" "$GITHUB_WS/" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$GITHUB_WS/"
-	ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@${VM_SSH_HOST} "chown -R '${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER}' '$GITHUB_WS'" || true
+debug_log "Looking for workspace";
+debug_log "=> Looking at \"${GITHUB_WORKSPACE:-}\"";
+if [ -d "${GITHUB_WORKSPACE:-}" ]; then
+	debug_log "..=> Found data at \"${GITHUB_WORKSPACE:-}\"";
 else
-	# Use trailing slash and /* glob to copy contents, not the directory itself
-	scp -r -P "$VM_SSH_PORT" -i "${EPHEM_KEY}" $SSH_EPHEMERAL_OPTS "$GITHUB_WS"/* "root@${VM_SSH_HOST}:$GITHUB_WS/"
-	ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@${VM_SSH_HOST} "chown -R '${GUEST_USER}:${GUEST_USER}' '$GITHUB_WS'" || true
-fi
+	debug_log "..=> Nothing to replicate at \"${GITHUB_WORKSPACE:-}\"";
+	GITHUB_WS="$PWD"
+	debug_log "=> Selecting \"${GITHUB_WS:-}\" instead";
+fi;
 
-debug_log "=> Replicated"
+ssh ${SSH_EPHEMERAL_OPTS} -p $VM_SSH_PORT root@${VM_SSH_HOST} "mkdir -p '$GITHUB_WS' && chown -R '${GUEST_USER}:${GUEST_USER}' '$GITHUB_WS'" || true
 
-# MARK: HERE
+if [ -d "${GITHUB_WS:-}" ]; then
+	debug_log "Replicating ${GITHUB_WS} to Guest VM"
+
+	# ensure destination exists and owned by guest user if present
+	if matches "$SYNC_METHOD" "rsync"; then
+		GUEST_RSYNC_USER="${GUEST_USER:-runner}"
+		RSYNC_KEY="${USER_KEY:-$EPHEM_KEY}"
+		RSYNC_EPHEMERAL_OPTS=$(build_sendenv_opts);
+		RSYNC_EPHEMERAL_OPTS="$RSYNC_EPHEMERAL_OPTS -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $RSYNC_KEY -o ConnectTimeout=35"
+		rsync -a --delete -e "ssh ${RSYNC_EPHEMERAL_OPTS} -p $VM_SSH_PORT" "$GITHUB_WS/" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$GITHUB_WS/"
+		ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@${VM_SSH_HOST} "chown -R '${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER}' '$GITHUB_WS'" || true
+	else
+		# Use trailing slash and /* glob to copy contents, not the directory itself
+		scp -r -P "$VM_SSH_PORT" -i "${EPHEM_KEY}" $SSH_EPHEMERAL_OPTS "$GITHUB_WS"/* "root@${VM_SSH_HOST}:$GITHUB_WS/"
+		ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@${VM_SSH_HOST} "chown -R '${GUEST_USER}:${GUEST_USER}' '$GITHUB_WS'" || true
+	fi
+	debug_log "=> Replicated"
+fi;
+
 # 7. run startup hook if exists
 "${VMSH_CMD}" $"[ -x ./startup.sh ] && ./startup.sh || true" || true
 
