@@ -153,6 +153,9 @@ USER_PUB="$(normalize_and_validate_input "${USER_PUB_IN:-}")"
 USERGROUP="${USERNAME:-runner}"
 USER_HOME_BASE_PATH="${USER_HOME_BASE_PATH:-/home}"  # or could be '/Users'
 # early cleanup of raw input
+if [ -n "$USER_PUB_IN" ] && [ -f "$USER_PUB_IN" ] && [ -r "$USER_PUB_IN" ]; then
+  rm -f "$USER_PUB_IN" 2>/dev/null || true ;
+fi ;
 unset USER_PUB_IN 2>/dev/null || true ;
 
 # create user group (same name) + user: try useradd/useradd-alternate/adduser/pw
@@ -163,31 +166,58 @@ if ! id "$USERNAME" >/dev/null 2>&1; then
     useradd -m -g "$USERGROUP" -s /bin/sh "$USERNAME" || true
   elif command -v adduser >/dev/null 2>&1; then
     _USER_TMP_DATA_FILE="./runner_$$.tmp"
-    printf '%1s::::::%1s:%2s/%1s:/bin/sh:\n' "$USERNAME" "$USER_HOME_BASE_PATH" > "$_USER_TMP_DATA_FILE";
+    printf '%s::::::%s:%s/%s:/bin/sh:\n' "$USERNAME" "$USERNAME" "$USER_HOME_BASE_PATH" "$USERNAME" > "$_USER_TMP_DATA_FILE";
     adduser -s /bin/sh -w none -f $_USER_TMP_DATA_FILE || true
-    rm -f ${_USER_TMP_DATA_FILE} 2>/dev/null || true
+    rm -f "${_USER_TMP_DATA_FILE:-}" 2>/dev/null || true
   elif command -v pw >/dev/null 2>&1; then
     # FreeBSD: set default group (-g) to the new group
     pw useradd -n "$USERNAME" -m -s /bin/sh -g "$USERGROUP" -w none || true
   fi
 fi
 
-debug_remote_log "Configuring user SSH key pair" ;
+debug_remote_log "Looking for new home ($USER_HOME_BASE_PATH/$USERNAME/)" ;
 
-mkdir -p "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh || true
-printf '%s\n' "$USER_PUB" > "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh/authorized_keys ;
-chmod 600 "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh/authorized_keys
-chmod 700 "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh
-chown -R "$USERNAME":"$USERGROUP" "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh || true
+if [ -d "$USER_HOME_BASE_PATH"/"$USERNAME" ]; then
+  debug_remote_log "Found USER home" &
+  debug_remote_log "Configuring user SSH key pair" ;
 
-debug_remote_log "SSH user key-pair configured" &
+  mkdir -p "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh || true
+  printf '%s\n' "$USER_PUB" > "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh/authorized_keys.new ;
+  mv -f "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh/authorized_keys.new "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh/authorized_keys ;
+  chmod 600 "$USER_HOME_BASE_PATH/$USERNAME"/.ssh/authorized_keys && chmod 700 "$USER_HOME_BASE_PATH/$USERNAME"/.ssh
+  chown -R "$USERNAME":"$USERGROUP" "$USER_HOME_BASE_PATH/$USERNAME"/.ssh || true
 
-# debug_remote_log "Configuring VM user configuration" ;
-# TODO: need to handle rest of https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables
-# each value should be at-least set to a reasonable default in the startup rc so that the work
+  debug_remote_log "SSH user key-pair configured" &
+
+  # debug_remote_log "Configuring VM user configuration" ;
+  # TODO: need to handle rest of https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables
+  # each value should be at-least set to a reasonable default in the startup rc so that the work
 
 
-debug_remote_log "Attempting to harden rest of user configuration" ;
+  debug_remote_log "Attempting to harden rest of user configuration" ;
+
+  for _purge_file in .rhosts .shosts ; do
+    if [ -f "$USER_HOME_BASE_PATH"/"$USERNAME"/"$_purge_file" ]; then
+      debug_remote_log "found ~/$_purge_file (will remove)" ;
+      rm -f "$USER_HOME_BASE_PATH"/"$USERNAME"/"$_purge_file" || true ;
+    fi
+  done
+
+  # Check if the line "Banner" is configured in /etc/ssh/sshd_config
+  if command -v grep >/dev/null 2>&1; then
+    _GREP_CHECK=$(grep -q -E -c -e "^\s*[B][a][n]{2}[e][r].+$" /etc/ssh/sshd_config 2>/dev/null);
+    if [ "${_GREP_CHECK:-0}" -ge 1 ]; then
+      printf "# reduce noise for CI logs\n" > "$USER_HOME_BASE_PATH"/"$USERNAME"/.hushlogin || true ;
+    fi
+    unset _GREP_CHECK 2>/dev/null || true
+  fi
+
+fi;
+
+# early cleanup of vars
+unset USER_PUB 2>/dev/null || true
+
+debug_remote_log "Attempting to harden rest of system configuration" ;
 
 # harden rest of config
 for _purge_rfile in hosts.equiv shosts.equiv ; do
@@ -197,27 +227,19 @@ for _purge_rfile in hosts.equiv shosts.equiv ; do
   fi
 done
 
-for _purge_file in .rhosts .shosts ; do
-  if [ -f "$USER_HOME_BASE_PATH"/"$USERNAME"/"$_purge_file" ]; then
-    debug_remote_log "found ~/$_purge_file (will remove)" ;
-    rm -f "$USER_HOME_BASE_PATH"/"$USERNAME"/"$_purge_file" || true ;
-  fi
-done
-
-# Check if the line "Banner" is configured in /etc/ssh/sshd_config
-if command -v grep >/dev/null 2>&1; then
-  _GREP_CHECK=$(grep -q -E -c -e "^\s*[B][a][n]{2}[e][r].+$" /etc/ssh/sshd_config 2>/dev/null);
-  if [ "${_GREP_CHECK:-0}" -ge 1 ]; then
-    printf "# reduce noise for CI logs\n" > "$USER_HOME_BASE_PATH"/"$USERNAME"/.hushlogin || true ;
-  fi
-  unset _GREP_CHECK 2>/dev/null || true
-fi
-
-unset USER_PUB 2>/dev/null || true
-
 # Ensure FreeBSD wheel handling + group membership (default group + supplementary)
 if command -v pw >/dev/null 2>&1; then
   pw usermod "$USERNAME" -g "$USERGROUP" -G wheel,"$USERNAME" || true
 fi
 
+# rest of the cleanup
+unset USERGROUP
+unset USER_HOME_BASE_PATH
+
 printf '%s\n' "CI user ${USERNAME:-} synced to VM" ;
+
+unset USERNAME 2>/dev/null || true ;
+unset debug_remote_log 2>/dev/null || true ;
+unset is_ssh_pubkey_line 2>/dev/null || true ;
+unset read_pub_from_file 2>/dev/null || true ;
+unset normalize_and_validate_input 2>/dev/null || true ;
