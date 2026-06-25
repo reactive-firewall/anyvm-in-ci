@@ -594,10 +594,14 @@ fi
 
 debug_log "Bridging done"
 
+USER_KEY="";
 # 4f. optionally create unprivileged user matching host and set its authorized_keys to its own ephemeral key
 if matches "$VM_USER_CREATE" "true"; then
 	GUEST_USER="${HOST_USER:-runner}"
-	USER_KEY="${HOME:-.}/id_user_ci_$(safe_uuidgen)_rsa"
+	GUEST_UID=$(id -g "${GUEST_USER}" 2>/dev/null || printf 501)
+	USER_KEY_ID="ci_$(safe_uuidgen)"
+	USER_KEY="${HOME:-${PWD:-.}}/id_user_${USER_KEY_ID:-ci_$$}_rsa"
+	mask_inputs "${USER_KEY_ID}";
 	# TODO: match the UID of GUEST_USER
 	debug_log "Cloning CI user to guest VM"
 	if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-users.sh" ]; then
@@ -615,6 +619,12 @@ if matches "$VM_USER_CREATE" "true"; then
 	cp -f "${ANYVM_WRAP_USER_FILE}" "${VMSH_CMD}"
 	debug_log "..=> Staged" & debug_log "....=> Setting Permissions on staged script" ;
 	chmod +x "${VMSH_CMD}"
+	VM_CMD_HINT=$"$VMSH_CMD";
+	debug_log "..=> Activating script ($VMSH_CMD_NAME)" ;
+	export USER_KEY
+	export GUEST_USER
+	export GUEST_UID
+	unset USER_KEY_ID 2>/dev/null || true;
 else
 	# wrapper uses root ephemeral key
 	debug_log "..=> Preparing script to run commands on Guest VM" ;
@@ -624,7 +634,26 @@ else
 	cp -f "${ANYVM_WRAP_ROOT_FILE}" "${VMSH_CMD}"
 	debug_log "..=> Staged" & debug_log "....=> Setting Permissions on staged script" ;
 	chmod +x "${VMSH_CMD}"
+	debug_log "..=> Activating root script ($VMSH_CMD_NAME)" ;
+	export USER_KEY=${EPHEM_KEY}
+	export GUEST_USER="root"
+	export GUEST_UID=0
 fi
+
+# rest of exports for activating vmsh tool
+export VM_SSH_PORT
+export VM_SSH_HOST
+
+if [ -e "$GITHUB_ENV" ]; then
+	printf "%s\n" "USER_KEY=${USER_KEY:-}" >> "${GITHUB_ENV:-/dev/null}";
+	printf "%s\n" "GUEST_USER=${GUEST_USER:-}" >> "${GITHUB_ENV:-/dev/null}";
+	printf "%s\n" "GUEST_UID=${GUEST_UID:-}" >> "${GITHUB_ENV:-/dev/null}";
+	printf "%s\n" "VM_SSH_PORT=${VM_SSH_PORT:-}" >> "${GITHUB_ENV:-/dev/null}";
+	printf "%s\n" "VM_SSH_HOST=${VM_SSH_HOST:-}" >> "${GITHUB_ENV:-/dev/null}";
+fi;
+
+debug_log "..=> Activated script" ;
+
 
 if [ -d "${VMSH_DIR:-}" ]; then
 	case ":$PATH:" in
@@ -693,7 +722,7 @@ fi
 if matches "${COPYBACK:-}" "true"; then
 	if matches "$SYNC_METHOD" "rsync"; then
 		GUEST_RSYNC_USER="${GUEST_USER:-runner}"
-		RSYNC_KEY="${USER_KEY:-$EPHEM_KEY}"
+		RSYNC_KEY="${USER_KEY:-${EPHEM_KEY:-}}"
 		RSYNC_EPHEMERAL_OPTS=$(build_sendenv_opts);
 		RSYNC_EPHEMERAL_OPTS="$RSYNC_EPHEMERAL_OPTS -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $RSYNC_KEY -o ConnectTimeout=35"
 		rsync -a --delete -e "ssh ${RSYNC_EPHEMERAL_OPTS} -p $VM_SSH_PORT" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$GITHUB_WS/" "$GITHUB_WS/"

@@ -115,7 +115,7 @@ SSH_EXIT_CODE=0
 # check that the EPHEM_KEY is useable
 if [ -n "${EPHEM_KEY:-}" ]; then
 	debug_wrapper_log "Checking for SSH Identity" ;
-	if [ -e "${EPHEM_KEY}" ] || [ -f "${EPHEM_KEY}.pub" ]; then
+	if [ -e "${EPHEM_KEY}" ]; then
 		debug_wrapper_log "=> Found ephemeral key on disk." ;
 		if [ -r "${EPHEM_KEY}" ]; then
 			debug_wrapper_log "..=> Found ${EPHEM_KEY}" ;
@@ -124,7 +124,7 @@ if [ -n "${EPHEM_KEY:-}" ]; then
 			debug_wrapper_log "....=> Trying to apply permission corrections" ;
 			# TODO: add -v if in debug mode
 			chmod 600 "${EPHEM_KEY}" || SSH_EXIT_CODE=77 ;
-			if [ $SSH_EXIT_CODE -eq 0 ] && [ -r "${EPHEM_KEY}" ]; then
+			if [ "$SSH_EXIT_CODE" -eq 0 ] && [ -r "${EPHEM_KEY}" ]; then
 				debug_wrapper_log "......=> Fixed ${EPHEM_KEY} keyfile" ;
 			else
 				debug_wrapper_log "....=> Applying corrections Unsuccessful" ;
@@ -142,7 +142,7 @@ fi ;
 
 if [ $SSH_EXIT_CODE -eq 0 ]; then
 	# Check working directory
-	GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
+	TARGET_WS="${GITHUB_WORKSPACE:-$PWD}"
 	# Build SSH arguments
 	SSH_EPHEMERAL_ROOT_OPTS="" # reset each time to avoid mis-re-use
 	SSH_EPHEMERAL_ROOT_OPTS=$(build_sendenv_opts);
@@ -150,14 +150,14 @@ if [ $SSH_EXIT_CODE -eq 0 ]; then
 	# TODO: ephemerally cache new hosts via:
 	# -o UserKnownHostsFile=${ANYVM_SSH_KNOWN_HOSTS_PATH:-/dev/null}
 	SSH_EPHEMERAL_ROOT_OPTS="$SSH_EPHEMERAL_ROOT_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-	ssh $SSH_EPHEMERAL_ROOT_OPTS -p ${VM_SSH_PORT:-22} -i $EPHEM_KEY "root@${VM_SSH_HOST:-}" "cd \"${GITHUB_WS}\"; $@" ;
+	ssh $SSH_EPHEMERAL_ROOT_OPTS -p ${VM_SSH_PORT:-22} -i $EPHEM_KEY "root@${VM_SSH_HOST:-127.0.0.1}" "cd \"${TARGET_WS:-.}\"; $@" ;
 	SSH_EXIT_CODE=$?;
 fi ;
 
 #cleanup
 unset build_sendenv_opts
 unset ENV_INPUTS
-unset GITHUB_WS
+unset TARGET_WS
 # reset each time to avoid mis-re-use
 unset SSH_EPHEMERAL_ROOT_OPTS
 exit ${SSH_EXIT_CODE:-255}
