@@ -203,7 +203,7 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || printf '::error:: %s\n' "failed to scp create_user data" ;
 		debug_user_log "..=> Transferred" & debug_user_log "..=> Waiting for user sync" &
 
-		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}" || printf '::error:: %s\n' "warning: create_user execution failed with $?" ;
+		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=1 sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}" || printf '::error:: %s\n' "warning: create_user execution failed with $?" ;
 		debug_user_log "..=> Synced"
 		unset USER_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
 	else

@@ -151,6 +151,12 @@ debug_remote_log "Syncing user to VM" ;
 # Normalize input public key (blob or file-path)
 USER_PUB="$(normalize_and_validate_input "${USER_PUB_IN:-}")"
 USERGROUP="${USERNAME:-runner}"
+USER_HOME_BASE_PATH=""
+if [ -d "/zroot" ]; then
+  if [ -d "/zroot" ]; then
+
+  fi;
+fi ;
 USER_HOME_BASE_PATH="${USER_HOME_BASE_PATH:-/home}"  # or could be '/Users'
 # early cleanup of raw input
 if [ -n "$USER_PUB_IN" ] && [ -f "$USER_PUB_IN" ] && [ -r "$USER_PUB_IN" ]; then
@@ -166,9 +172,10 @@ if ! id "$USERNAME" >/dev/null 2>&1; then
     useradd -m -g "$USERGROUP" -s /bin/sh "$USERNAME" || true
   elif command -v adduser >/dev/null 2>&1; then
     _USER_TMP_DATA_FILE="./runner_$$.tmp"
-    printf '%s::::::%s:%s/%s:/bin/sh:\n' "$USERNAME" "$USERNAME" "$USER_HOME_BASE_PATH" "$USERNAME" > "$_USER_TMP_DATA_FILE";
-    adduser -s /bin/sh -w none -f $_USER_TMP_DATA_FILE || true
-    rm -f "${_USER_TMP_DATA_FILE:-}" 2>/dev/null || true
+    printf '%s::::::%s:%s/%s:/bin/sh:\n' "$USERNAME" "$USERNAME" "$USER_HOME_BASE_PATH" "$USERNAME" > "$_USER_TMP_DATA_FILE" || printf "::warning:: %s\n" "Failed to generate user ${USERNAME:-} data file" >&2;
+    adduser -s /bin/sh -w none -f $_USER_TMP_DATA_FILE || printf "::error:: %s\n" "Error: Failed to create user ${USERNAME:-}" >&2;
+    pw user show "$USERNAME" || printf "::error:: %s\n" "Error: Failed to verify user ${USERNAME:-} was created" >&2;
+    rm -f "${_USER_TMP_DATA_FILE:-}" 2>/dev/null || printf "::warning:: %s\n" "Failed to remove user ${USERNAME:-} data file" >&2;
   elif command -v pw >/dev/null 2>&1; then
     # FreeBSD: set default group (-g) to the new group
     pw useradd -n "$USERNAME" -m -s /bin/sh -g "$USERGROUP" -w none || true
