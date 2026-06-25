@@ -652,9 +652,8 @@ fi;
 
 ssh ${SSH_EPHEMERAL_OPTS} -p $VM_SSH_PORT root@${VM_SSH_HOST} "mkdir -p '$GITHUB_WS' && chown -R '${GUEST_USER}:${GUEST_USER}' '$GITHUB_WS'" || true
 
-if [ -d "${GITHUB_WS:-}" ]; then
+if [ -d "${GITHUB_WS:-}" ] && [ "$(find "$GITHUB_WS" -mindepth 1 -maxdepth 1 -type f -o -type d | wc -l)" -gt 0 ]; then
 	debug_log "Replicating ${GITHUB_WS} to Guest VM"
-
 	# ensure destination exists and owned by guest user if present
 	if matches "$SYNC_METHOD" "rsync"; then
 		GUEST_RSYNC_USER="${GUEST_USER:-runner}"
@@ -669,7 +668,9 @@ if [ -d "${GITHUB_WS:-}" ]; then
 		ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@${VM_SSH_HOST} "chown -R '${GUEST_USER}:${GUEST_USER}' '$GITHUB_WS'" || true
 	fi
 	debug_log "=> Replicated"
-fi;
+else
+	debug_log "Source workspace is empty – only directory path was created on guest VM"
+fi
 
 # 7. run startup hook if exists
 "${VMSH_CMD}" $"[ -x ./startup.sh ] && ./startup.sh || true" || true
