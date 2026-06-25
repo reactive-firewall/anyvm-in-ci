@@ -375,7 +375,7 @@ ANYVM_BIN="$ANYVM_PY_PATH"
 # MARK: Speculative Pre-cacheing
 
 # 2c. (prep) Pre-cache Speculative "needed" resources locally
-debug_log "Selecting Builder ${BASE_URL:-'null'}"
+debug_log "Determining Builder ${BASE_URL:-'null'}"
 if [ -n "$ANYVM_ARCH" ]; then
 	case "${ANYVM_ARCH}" in
 		x86_64)
@@ -393,7 +393,7 @@ IMAGE_PATH=""
 for ext in "qcow2.zst" "qemu"; do
 	cand="$DATA_DIR/images/${ANYVM_NAME}.${ext}"
 	url="${BASE_URL}/${ANYVM_NAME}.${ext}"
-	debug_log "fetching target from ${url}"
+	debug_log "Fetching target from ${url}"
 	if download_file "$url" "$cand"; then
 		if [ -n "${IMAGE_PATH}" ] && [ -f "${IMAGE_PATH}" ]; then
 			continue ;
@@ -441,16 +441,21 @@ fi
 debug_log "Configuring ANYVM call"
 debug_log "=> Selecting VM OS (--os \"${ANYVM_OSNAME}\")" &
 debug_log "=> Selecting VM RAM (--mem \"${ANYVM_MEM}\")" &
-debug_log "=> Setting VM Builder (--builder \"${ANYVM_VERSION}\")" &
+debug_log "=> Selecting VM Builder (--builder \"${ANYVM_VERSION}\")" &
 START_ARGS=(--os "${ANYVM_OSNAME}" --mem "$ANYVM_MEM" --detach --builder "$ANYVM_VERSION")
 if [ -d "${DATA_DIR:-}" ]; then
-	debug_log "=> Selecting data dir..."
+	debug_log "=> Selecting data dir (--data-dir \"$INPUT_DATA_DIR\")"
 	START_ARGS+=(--data-dir "$DATA_DIR")
 fi
 if [ -n "$ANYVM_ARCH" ] ; then
 	debug_log "=> Selecting VM ISA (--arch \"${ANYVM_ARCH}\")"
 	START_ARGS+=(--arch "${ANYVM_ARCH}")
 fi
+if [ -n "$ANYVM_CPU_ARCH" ] ; then
+	debug_log "=> Selecting VM CPU Model Emulation (--cpu-type \"${ANYVM_CPU_ARCH}\")"
+	START_ARGS+=(--cpu-type "${ANYVM_CPU_ARCH}")
+fi
+
 if [ -n "$ANYVM_RELEASE" ] ; then
 	debug_log "=> Selecting VM Release (--release \"${ANYVM_RELEASE}\")"
 	START_ARGS+=(--release "${ANYVM_RELEASE}")
