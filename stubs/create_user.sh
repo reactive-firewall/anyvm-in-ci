@@ -184,7 +184,7 @@ fi
 
 debug_remote_log "Looking for new home ($USER_HOME_BASE_PATH/$USERNAME/)" ;
 
-if [ -d "$USER_HOME_BASE_PATH"/"$USERNAME" ]; then
+if [ -d "$USER_HOME_BASE_PATH/$USERNAME" ]; then
   debug_remote_log "Found USER home" &
   debug_remote_log "Configuring user SSH key pair" ;
 
@@ -193,32 +193,27 @@ if [ -d "$USER_HOME_BASE_PATH"/"$USERNAME" ]; then
   mv -f "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh/authorized_keys.new "$USER_HOME_BASE_PATH"/"$USERNAME"/.ssh/authorized_keys ;
   chmod 600 "$USER_HOME_BASE_PATH/$USERNAME"/.ssh/authorized_keys && chmod 700 "$USER_HOME_BASE_PATH/$USERNAME"/.ssh
   chown -R "$USERNAME":"$USERGROUP" "$USER_HOME_BASE_PATH/$USERNAME"/.ssh || true
-
-  debug_remote_log "SSH user key-pair configured" &
+  debug_remote_log "SSH user key-pair configured" ;
 
   # debug_remote_log "Configuring VM user configuration" ;
   # TODO: need to handle rest of https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables
   # each value should be at-least set to a reasonable default in the startup rc so that the work
 
-
   debug_remote_log "Attempting to harden rest of user configuration" ;
-
   for _purge_file in .rhosts .shosts ; do
-    if [ -f "$USER_HOME_BASE_PATH"/"$USERNAME"/"$_purge_file" ]; then
-      debug_remote_log "found ~/$_purge_file (will remove)" ;
-      rm -f "$USER_HOME_BASE_PATH"/"$USERNAME"/"$_purge_file" || true ;
-    fi
+      if [ -f "$USER_HOME_BASE_PATH/$USERNAME/$_purge_file" ]; then
+        debug_remote_log "found ~/$_purge_file (will remove)"
+        rm -f "$USER_HOME_BASE_PATH/$USERNAME/$_purge_file" 2>/dev/null || true
+      fi
   done
-
+  debug_remote_log "Checking if we can use hushlogin"
   # Check if the line "Banner" is configured in /etc/ssh/sshd_config
-  if command -v grep >/dev/null 2>&1; then
-    _GREP_CHECK=$(grep -q -E -c -e "^\s*[B][a][n]{2}[e][r].+$" /etc/ssh/sshd_config 2>/dev/null);
-    if [ "${_GREP_CHECK:-0}" -ge 1 ]; then
-      printf "# reduce noise for CI logs\n" > "$USER_HOME_BASE_PATH"/"$USERNAME"/.hushlogin || true ;
+  if [ -f /etc/ssh/sshd_config ]; then
+    if grep -c "^[[:space:]]*Banner" /etc/ssh/sshd_config >/dev/null 2>&1; then
+      debug_remote_log "generating ~/.hushlogin"
+      printf "# reduce noise for CI logs\n" > "$USER_HOME_BASE_PATH/$USERNAME/.hushlogin" || true;
     fi
-    unset _GREP_CHECK 2>/dev/null || true
   fi
-
 fi;
 
 # early cleanup of vars
