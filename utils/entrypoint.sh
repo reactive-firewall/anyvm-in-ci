@@ -643,6 +643,7 @@ debug_log "Looking for workspace";
 debug_log "=> Looking at \"${GITHUB_WORKSPACE:-}\"";
 if [ -d "${GITHUB_WORKSPACE:-}" ]; then
 	debug_log "..=> Found data at \"${GITHUB_WORKSPACE:-}\"";
+	if [ "${DEBUG:-0}" -eq "1" ]; then ls -lap "${GITHUB_WORKSPACE:-}"; fi;
 else
 	debug_log "..=> Nothing to replicate at \"${GITHUB_WORKSPACE:-}\"";
 	GITHUB_WS="$PWD"
