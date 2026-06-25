@@ -2,14 +2,16 @@
 # vm-reaper.sh  -- Hardened, minimal-output stopper for detached/hung qemu VMs
 # Usage examples:
 #  sudo DRY_RUN=1 ./stop-qemu-vm-safe.sh --pid 1234
-#  sudo ./stop-qemu-vm-safe.sh --name qemu-system-x86_64
-#  sudo ./stop-qemu-vm-safe.sh --monitor /tmp/qemu-monitor.sock
+#  sudo ./vm-reaper.sh --name qemu-system-x86_64
+#  sudo ./vm-reaper.sh --monitor /tmp/qemu-monitor.sock
 
 TIMOUT_TERM=5
 TIMEOUT_KILL=3
 
 # Configuration: set DRY_RUN=1 to show planned actions only (safe for logs)
 DRY_RUN=${DRY_RUN:-0}
+
+QEMU_PROC_RE='(^|[[:space:]/])(qemu-system-[^[:space:]/]+|qemu-kvm)([[:space:]]|$)'
 
 # Helper: print short, non-sensitive message to stderr
 log() { printf '%s\n' "$1" >&2; }
@@ -25,6 +27,31 @@ obf() {
     tail="$(printf '%s' "$t" | tail -c 5)"
     printf '***%s' "$tail"
   fi
+}
+
+# Helper: validate that a PID is a positive integer
+is_positive_pid() {
+  _pid="$1"
+  # Check if empty
+  [ -z "$_pid" ] && return 1
+  # Check if it matches the pattern: one or more digits, no other characters
+  case "$_pid" in
+    *[!0-9]*) return 1 ;;
+    '') return 1 ;;
+    0) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# Helper: validate that a process at PID is a QEMU process
+is_qemu_pid() {
+  _pid="$1"
+  [ -z "$_pid" ] || [ "$_pid" -eq 0 ] 2>/dev/null && return 1
+  # Use ps to get the command line and check if it matches QEMU pattern
+  _ps_output="$(ps -p "$_pid" -o args= 2>/dev/null || true)"
+  [ -z "$_ps_output" ] && return 1
+  # Check if output matches qemu pattern (already defined in script)
+  printf '%s' "$_ps_output" | grep -Eq "$QEMU_PROC_RE"
 }
 
 # Minimal arg parsing
@@ -54,7 +81,6 @@ if [ -z "$PID" ] && [ -n "$PROC_NAME" ]; then
   fi
 fi
 
-QEMU_PROC_RE='(^|[[:space:]/])(qemu-system-[^[:space:]/]+|qemu-kvm)([[:space:]]|$)'
 # If still none, try common qemu names but do not reveal matches
 if [ -z "$PID" ]; then
   if command -v pgrep >/dev/null 2>&1; then
@@ -91,6 +117,18 @@ fi
 
 # If PID known, attempt TERM then KILL, but only log obfuscated PID
 if [ -n "$PID" ]; then
+  # Validate PID before signaling
+  if ! is_positive_pid "$PID"; then
+    log "Error: invalid PID format $(obf "$PID")"
+    exit 1
+  fi
+  
+  # Validate that PID is a QEMU process before signaling
+  if ! is_qemu_pid "$PID"; then
+    log "Error: process $(obf "$PID") is not a QEMU process"
+    exit 1
+  fi
+  
   pid_obf="pid=$(obf "$PID")"
   if is_running "$PID"; then
     if [ "$DRY_RUN" -eq 1 ]; then
