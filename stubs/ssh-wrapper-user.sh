@@ -124,7 +124,7 @@ if [ -n "${USER_KEY:-}" ]; then
 			debug_wrapper_log "....=> Trying to apply permission corrections" ;
 			# TODO: add -v if in debug mode
 			chmod 600 "${USER_KEY}" || SSH_EXIT_CODE=77 ;
-			if [ ${SSH_EXIT_CODE} -eq 0 ] && [ -r "${USER_KEY}" ]; then
+			if [ $SSH_EXIT_CODE -eq 0 ] && [ -r "${USER_KEY}" ]; then
 				debug_wrapper_log "......=> Fixed ${USER_KEY} keyfile" ;
 			else
 				debug_wrapper_log "....=> Applying corrections Unsuccessful" ;
@@ -140,7 +140,7 @@ if [ -n "${USER_KEY:-}" ]; then
 	fi ;
 fi ;
 
-if [ SSH_EXIT_CODE -eq 0 ]; then
+if [ $SSH_EXIT_CODE -eq 0 ]; then
 	# Check working directory
 	GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
 	# Build SSH arguments

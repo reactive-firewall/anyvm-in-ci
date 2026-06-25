@@ -124,7 +124,7 @@ if [ -n "${EPHEM_KEY:-}" ]; then
 			debug_wrapper_log "....=> Trying to apply permission corrections" ;
 			# TODO: add -v if in debug mode
 			chmod 600 "${EPHEM_KEY}" || SSH_EXIT_CODE=77 ;
-			if [ ${SSH_EXIT_CODE} -eq 0 ] && [ -r "${EPHEM_KEY}" ]; then
+			if [ $SSH_EXIT_CODE -eq 0 ] && [ -r "${EPHEM_KEY}" ]; then
 				debug_wrapper_log "......=> Fixed ${EPHEM_KEY} keyfile" ;
 			else
 				debug_wrapper_log "....=> Applying corrections Unsuccessful" ;
@@ -140,13 +140,13 @@ if [ -n "${EPHEM_KEY:-}" ]; then
 	fi ;
 fi ;
 
-if [ SSH_EXIT_CODE -eq 0 ]; then
+if [ $SSH_EXIT_CODE -eq 0 ]; then
 	# Check working directory
 	GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
 	# Build SSH arguments
 	SSH_EPHEMERAL_ROOT_OPTS="" # reset each time to avoid mis-re-use
 	SSH_EPHEMERAL_ROOT_OPTS=$(build_sendenv_opts);
-	SSH_EPHEMERAL_ROOT_OPTS="$SSH_EPHEMERAL_ROOT_OPTS -o BatchMode=yes -o EscapeChar=none -e none -l ${GUEST_USER}"
+	SSH_EPHEMERAL_ROOT_OPTS="$SSH_EPHEMERAL_ROOT_OPTS -o BatchMode=yes -o EscapeChar=none -e none -l root"
 	# TODO: ephemerally cache new hosts via:
 	# -o UserKnownHostsFile=${ANYVM_SSH_KNOWN_HOSTS_PATH:-/dev/null}
 	SSH_EPHEMERAL_ROOT_OPTS="$SSH_EPHEMERAL_ROOT_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
