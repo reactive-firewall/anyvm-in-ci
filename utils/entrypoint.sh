@@ -690,13 +690,18 @@ if [ -n "${INPUT_RUN:-}" ]; then
 fi
 
 # 10. optional copyback logic
-if matches "$SYNC_METHOD" "rsync"; then
-	rsync -a --delete -e "ssh -p $VM_SSH_PORT -i ${RSYNC_KEY} -o BatchMode=yes -o EscapeChar=none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$GITHUB_WS/" "$GITHUB_WS/"
-else
-	# Use trailing slash and /* glob to copy contents, not the directory itself
-	scp -r -P "$VM_SSH_PORT" -i "${RSYNC_KEY}" $SSH_EPHEMERAL_OPTS "root@${VM_SSH_HOST}:$GITHUB_WS/*" "$GITHUB_WS/"
-fi
-
+if matches "${COPYBACK:-}" "true"; then
+	if matches "$SYNC_METHOD" "rsync"; then
+		GUEST_RSYNC_USER="${GUEST_USER:-runner}"
+		RSYNC_KEY="${USER_KEY:-$EPHEM_KEY}"
+		RSYNC_EPHEMERAL_OPTS=$(build_sendenv_opts);
+		RSYNC_EPHEMERAL_OPTS="$RSYNC_EPHEMERAL_OPTS -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $RSYNC_KEY -o ConnectTimeout=35"
+		rsync -a --delete -e "ssh ${RSYNC_EPHEMERAL_OPTS} -p $VM_SSH_PORT" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$GITHUB_WS/" "$GITHUB_WS/"
+	else
+		# Use trailing slash and /* glob to copy contents, not the directory itself
+		scp -r -P "$VM_SSH_PORT" -i "${EPHEM_KEY}" $SSH_EPHEMERAL_OPTS "root@${VM_SSH_HOST}:$GITHUB_WS/" "$GITHUB_WS/"
+	fi
+fi;
 
 # 10b afterwards
 if [ -n "${INPUT_AFTERWARDS:-}" ]; then
