@@ -111,48 +111,56 @@ build_sendenv_opts() {
 	printf '%s' "$sendenv_opts"
 }
 
-validate_user_key_input() {
-	RETURN_CODE=1
-	# check that the USER_KEY is useable
-	if [ -n "${USER_KEY:-}" ]; then
-		debug_wrapper_log "Checking for SSH Identity" ;
-		if [ -e "${USER_KEY}" ] || [ -f "${USER_KEY}.pub" ]; then
-			debug_wrapper_log "=> Found ${USER_KEY} on disk." ;
-			if [ -r "${USER_KEY}" ]; then
-				debug_wrapper_log "..=> Found ${USER_KEY}" ;
-				RETURN_CODE=0;
-			elif [ -f "${USER_KEY}" ] || [ -r "${USER_KEY}.pub" ]; then
-				debug_wrapper_log "..=> Found ${USER_KEY}.pub file." ;
-				if [ -e "${USER_KEY}" ]; then
-					debug_wrapper_log "....=> Trying to apply permission corrections" ;
-					# TODO: add -v if in debug mode
-					chmod 600 "${USER_KEY}" || RETURN_CODE=77 ;
-					if [ "$RETURN_CODE" -ne 77 ] && [ -r "${USER_KEY}" ]; then
-						debug_wrapper_log "......=> Fixed ${USER_KEY} keyfile" ;
-						RETURN_CODE=0;
-					else
-						debug_wrapper_log "....=> Applying corrections Unsuccessful" ;
-						RETURN_CODE=77 ;
-					fi ;
+
+SSH_EXIT_CODE=1
+# check that the USER_KEY is useable
+if [ -n "${USER_KEY:-}" ]; then
+	debug_wrapper_log "Checking for SSH Identity" ;
+	if [ -e "${USER_KEY}" ] || [ -f "${USER_KEY}.pub" ]; then
+		debug_wrapper_log "=> Found ${USER_KEY} on disk." ;
+		if [ -r "${USER_KEY}" ]; then
+			debug_wrapper_log "..=> Found ${USER_KEY}" ;
+			SSH_EXIT_CODE=0;
+		elif [ -f "${USER_KEY}" ] || [ -r "${USER_KEY}.pub" ]; then
+			debug_wrapper_log "..=> Found ${USER_KEY}.pub file." ;
+			if [ -e "${USER_KEY}" ]; then
+				debug_wrapper_log "....=> Trying to apply permission corrections" ;
+				# TODO: add -v if in debug mode
+				chmod 600 "${USER_KEY}" || SSH_EXIT_CODE=77 ;
+				if [ "$SSH_EXIT_CODE" -ne 77 ] && [ -r "${USER_KEY}" ]; then
+					debug_wrapper_log "......=> Fixed ${USER_KEY} keyfile" ;
+					SSH_EXIT_CODE=0;
 				else
-					debug_wrapper_log "..=> Missing matching private keyfile" ;
-					RETURN_CODE=66 ;
+					debug_wrapper_log "....=> Applying corrections Unsuccessful" ;
+					SSH_EXIT_CODE=77 ;
 				fi ;
 			else
-				debug_wrapper_log "..=> Missing ${USER_KEY} keyfile" ;
-				RETURN_CODE=66 ;
+				debug_wrapper_log "..=> Missing matching private keyfile" ;
+				SSH_EXIT_CODE=66 ;
 			fi ;
 		else
-			debug_wrapper_log "..=> Missing SSH Identity" ;
-			RETURN_CODE=66 ;
+			debug_wrapper_log "..=> Missing ${USER_KEY} keyfile" ;
+			SSH_EXIT_CODE=66 ;
 		fi ;
+	else
+		debug_wrapper_log "..=> Missing SSH Identity" ;
+		SSH_EXIT_CODE=66 ;
 	fi ;
-	return $RETURN_CODE;
-}
+fi ;
 
-SSH_EXIT_CODE=$(validate_user_key_input);
+if [ "${SSH_EXIT_CODE:-1}" -eq 0 ]; then
+	debug_wrapper_log "Checking for guest SSH address" ;
+	if [ -n "${VM_SSH_HOST:-}" ]; then
+		debug_wrapper_log "=> Determined guest SHH address" ;
+	else
+		debug_wrapper_log "=> Unable to determine guest SSH address" ;
+		SSH_EXIT_CODE=125 ;
+	fi ;
+fi;
 
-if [ $SSH_EXIT_CODE -eq 0 ]; then
+
+
+if [ "${SSH_EXIT_CODE:-1}" -eq 0 ]; then
 	# Check working directory
 	TARGET_WS="${GITHUB_WORKSPACE:-$PWD}"
 	# Build SSH arguments
@@ -162,7 +170,7 @@ if [ $SSH_EXIT_CODE -eq 0 ]; then
 	# TODO: ephemerally cache new hosts via:
 	# -o UserKnownHostsFile=${ANYVM_SSH_KNOWN_HOSTS_PATH:-/dev/null}
 	SSH_EPHEMERAL_USER_OPTS="$SSH_EPHEMERAL_USER_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-	ssh $SSH_EPHEMERAL_USER_OPTS -i $USER_KEY -p ${VM_SSH_PORT:-22} "${GUEST_USER:-}@${VM_SSH_HOST:-}" "cd \"${TARGET_WS:-.}\"; $@" ;
+	ssh $SSH_EPHEMERAL_USER_OPTS -i $USER_KEY -p ${VM_SSH_PORT:-22} "$GUEST_USER@$VM_SSH_HOST" "cd \"${TARGET_WS:-.}\"; $@" ;
 	SSH_EXIT_CODE=$?;
 fi ;
 
