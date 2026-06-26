@@ -298,9 +298,9 @@ runs:
         # Reap VM
         printf "::group::%s\n" "Reaping" ;
         if [ "${RUNNER_DEBUG:-}" = "1" ]; then printf "::debug:: %s\n" "Looking for '${ANYVM_ACTION_PATH}'" ; fi ;
-        if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ] ; then
-          sudo "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ;
+        if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/vm-reaper.sh" ] ; then
+          sudo "${ANYVM_ACTION_PATH}/utils/vm-reaper.sh" ;
         else
-          "utils/stop-qemu-vm-safe.sh" || exit 1 ;
+          "utils/vm-reaper.sh" || exit 1 ;
         fi ;
         printf "::endgroup::\n" ;

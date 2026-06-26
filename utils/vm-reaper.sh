@@ -1,7 +1,7 @@
 #!/bin/sh
 # vm-reaper.sh  -- Hardened, minimal-output stopper for detached/hung qemu VMs
 # Usage examples:
-#  sudo DRY_RUN=1 ./stop-qemu-vm-safe.sh --pid 1234
+#  sudo DRY_RUN=1 ./vm-reaper.sh --pid 1234
 #  sudo ./vm-reaper.sh --name qemu-system-x86_64
 #  sudo ./vm-reaper.sh --monitor /tmp/qemu-monitor.sock
 
@@ -14,7 +14,7 @@ DRY_RUN=${DRY_RUN:-0}
 QEMU_PROC_RE='(^|[[:space:]/])(qemu-system-[^[:space:]/]+|qemu-kvm)([[:space:]]|$)'
 
 # Helper: print short, non-sensitive message to stderr
-log() { printf '%s\n' "$1" >&2; }
+log() { printf '[vm-reaper] %s\n' "$1" >&2; }
 
 # Helper: display an obfuscated version of a token (keep last 4 chars)
 obf() {
@@ -185,11 +185,9 @@ else
 fi
 log "Remaining qemu processes: $remaining"
 
-# If disk was supplied previously we would not echo its path; suggest offline check only (no path)
-log "If disk integrity check is needed, run qemu-img check on a safe copy of the image (do not expose image paths in logs)."
-
 # Exit code: 0 if no remaining qemu processes, 1 otherwise
 if [ "$remaining" -eq 0 ]; then
+  log "All done" ;
   exit 0
 else
   exit 1
