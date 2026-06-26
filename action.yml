@@ -297,10 +297,19 @@ runs:
       run: |
         # Reap VM
         printf "::group::%s\n" "Reaping" ;
-        if [ "${RUNNER_DEBUG:-}" = "1" ]; then printf "::debug:: %s\n" "Looking for '${ANYVM_ACTION_PATH}'" ; fi ;
-        if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ] ; then
-          sudo "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ;
+        if [ "${RUNNER_DEBUG:-}" = "1" ]; then
+          printf "::debug:: %s\n" "Looking for '${ANYVM_ACTION_PATH}'" ;
+        fi ;
+        reaper="${ANYVM_ACTION_PATH}/utils/vm-reaper.sh" ;
+        if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${reaper}" ] ; then
+          _err_msg_no_reap="::error title='VM-LEAKED'::vm-reaper.sh errored with code" ;
+          if command -v sudo >/dev/null 2>&1 ; then
+            sudo "${reaper}" || { printf '%s\n' "$_err_msg_no_reap $?" ; exit 1 ;} ;
+          else
+            "${reaper}" || { printf '%s\n' "$_err_msg_no_reap $?" ; exit 1 ;} ;
+          fi ;
         else
-          "utils/stop-qemu-vm-safe.sh" || exit 1 ;
+          printf "::error title='MISSING'::%s\n" "vm-reaper.sh not found at ${reaper}" ;
+          exit 1 ;
         fi ;
         printf "::endgroup::\n" ;
