@@ -8,8 +8,23 @@ inputs:
   osname:
     description: "The VM's OS name to use for looking up anyvm images"
     required: true
-    default: "freebsd"
-    # freebsd / ghostbsd / openbsd / netbsd / dragonflybsd / midnightbsd / solaris / omnios / openindiana / tribblix / haiku / ubuntu / blissos
+    default: 'freebsd'
+    type: choice
+    options:
+      - freebsd
+      - ghostbsd
+      - openbsd
+      - netbsd
+      - dragonflybsd
+      - midnightbsd
+      - solaris
+      - omnios
+      - openindiana
+      - openindiana
+      - tribblix
+      - haiku
+      - ubuntu
+      - blissos
   prepare:
     description: "Pre-run block to set up the VM before run (shell commands)"
     required: false
@@ -21,55 +36,103 @@ inputs:
     required: false
   release:
     description: "The OS release/version of the VM image"
+    type: string
     required: false
   arch:
-    description: "The CPU architecture of the VM (e.g., x86_64, arm64)"
+    description: "The CPU architecture of the VM (e.g., x86_64, aarch64)"
+    type: choice
+    options:
+      - x86_64
+      - aarch64 # arm64
+      - riscv64
+      - s390x  # experimental
+      - powerpc64
+      - ppc64le  # experimental
+      - sparc64  # experimental
     required: false
-    default: x86_64
+    default: null
   envs:
     description: "Environment variables to pass into VM (newline-separated KEY=VALUE pairs)"
+    type: string
     required: false
   mem:
     description: "Memory size of the VM in MB"
-    required: false
-    default: 6144
+    # see https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories
+    type: number
+    options:
+      - 1024
+      - 2048
+      - 3072
+      - 4096  # limit of ubuntu-slim hosts
+      - 6144  # limit of macOS-{26,latest} hosts
+      - 8192
+      - 10240  # 10 GiB
+      - 12288  # 12 GiB
+      - 14336  # limit of macOS-*-intel hosts
+      - 16384  # limit of ubuntu-2* hosts
+      - 24576  # TODO: requires enabling 10 GB of host swap or detect large/custom runner
+      - 32768  # TODO: requires enabling 30 GB of host swap or detect large/custom runner
+      - 49152  # TODO: requires enabling 32 GB of host swap or detect large/custom runner
+      - 65536  # TODO: requires enabling 64 GB of host swap or detect large/custom runner
+      - 98304  # TODO: requires enabling 96 GB of host swap or detect large/custom runner
+      - 131072  # TODO: requires enabling 128 GB of host swap AND detect large runner
+    required: true
+    default: 3072
   cpu:
     description: "Number of CPU cores for the VM"
+    type: number
     required: false
   nat:
     description: "NAT port forwarding rules for the VM"
     required: false
   usesh:
     description: "Use sh instead of the default shell in the VM"
+    type: boolean
     required: false
     default: true
   sync:
     description: "Strategy for synchronizing source code to/from the VM"
     required: false
+    type: choice
+    options:
+      - rsync
+      - scp
+    default: scp
   copyback:
     description: "Copy build artifacts back from VM to host"
+    type: boolean
     required: false
-  debug:
-    description: "Enable debug output during execution"
+    default: true
+  drop-root:
+    description: "create a runner user on the VM to use instead of default root user."
+    type: boolean
     required: false
+    default: true
   data-dir:
     description: "Directory to store VM data and images"
     required: false
   cache-dir:
     description: "Directory to store anyvm cache"
     required: false
+    default: ~/Library/Caches/anyvm-in-ci
   sync-time:
     description: "Synchronize the VM time with NTP (true/false)"
+    type: boolean
     required: false
-    default: "false"
+    default: false
   disable-cache:
     description: "Disable caching for packages and VM images (true/false)"
+    type: boolean
     required: false
-    default: "false"
+    default: false
   custom-shell-name:
     description: "Custom shell name for VM shell wrapper script"
     required: false
     default: "vmsh"
+  ipv6-enabled:
+    description: "Enable RFC 8200: STD 86 Networking mode (IPv6) for the guest VM (true/false)"
+    type: boolean
+    required: false
   token:
     description: |
       GitHub token used to authenticate when fetching VM images from
@@ -82,10 +145,39 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Detect guest arch
+      id: detect_arch
+      if: ${{ inputs.arch == null || inputs.arch == '' }}
+      shell: bash
+      env:
+        RUNNER_ARCH: ${{ runner.arch }}
+        RUNNER_DEBUG: ${{ runner.debug }}
+      run: |
+        # Map documented GitHub runner.arch values to canonical guest_arch
+        set -euo pipefail
+        case "${RUNNER_ARCH:-}" in
+          x86|X86|x64|X64)
+            chosen="x86_64"
+            ;;
+          ARM64|arm64|ARM|arm)
+            chosen="aarch64"
+            ;;
+          *)
+            printf "::error::Unsupported or unknown runner.arch: %s\n" "${RUNNER_ARCH:-<unset>}"
+            exit 2
+            ;;
+        esac
+        # Emit debug logs only when runner.debug is true
+        if [ "${RUNNER_DEBUG:-false}" = "true" ]; then
+          printf "::debug::Detected runner.arch=%s\n" "${RUNNER_ARCH:-<unset>}"
+          printf "::debug::Mapped guest_arch=%s\n" "$chosen"
+        fi
+        printf "guest_arch=%s\n" "$chosen" >> "$GITHUB_OUTPUT"
     - name: Detect CPU count
       id: detect_cpus
       shell: bash
       run: |
+        # Map GitHub runner OS values to canonical guest osname
         case "$(uname -s 2>/dev/null || echo Windows)" in
           Linux|Darwin)
             cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || printf "%i\n" 1)
@@ -104,6 +196,20 @@ runs:
         cpus=${cpus:-1}
         case "$cpus" in ''|*[!0-9]*) cpus=1 ;; esac
         echo "cpus=$cpus" >> "$GITHUB_OUTPUT"
+    - name: Cache
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ${{ inputs.cache-dir }}/**/anyvm.py
+          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/*.qemu
+          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/*.qcow2.zst
+          ~/id_ci_vm_ephemeral_*
+          ~/id_user_ci_*
+          /opt/**/anyvm-in-ci/bin/${{ inputs.custom-shell-name || 'vmsh' }}
+        key: ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}
+        restore-keys: |
+          ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-
+          ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
     - name: "Validate inputs and run anyvm"
       id: anyvm-entrypoint
       shell: bash
@@ -116,33 +222,71 @@ runs:
         INPUT_RUN: ${{ inputs.run }}
         INPUT_AFTERWARDS: ${{ inputs.afterwards }}
         INPUT_RELEASE: ${{ inputs.release }}
-        INPUT_ARCH: ${{ inputs.arch }} # TODO: needs to have fallback to runner.os arch
-        INPUT_ENVS: ${{ inputs.envs }} # TODO: needs to be bridged
+        INPUT_ARCH: ${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}
+        INPUT_ENVS: ${{ inputs.envs }} # TODO: needs to be normalized
         INPUT_MEM: ${{ inputs.mem }}  # TODO: should also provide host swap on linux when value is above runner shreshold, etc.
         INPUT_CPU: ${{ inputs.cpu || steps.detect_cpus.outputs.cpus }}
         INPUT_SYNC: ${{ inputs.sync || 'scp' }}
         INPUT_COPYBACK: ${{ inputs.copyback }}
-        INPUT_DEBUG: ${{ inputs.debug || runner.debug }}
+        INPUT_DEBUG: ${{ runner.debug }}
         INPUT_DATA_DIR: ${{ inputs.data-dir }}  # should set a reasonable default for caching logic
-        INPUT_CACHE_DIR: ${{ inputs.cache-dir }}  # TODO: should set secure default
+        INPUT_CACHE_DIR: ${{ inputs.cache-dir }}
+        INPUT_SYNC_TIME: ${{ inputs.sync-time }}
+        INPUT_USE_IPV6: ${{ inputs.ipv6-enabled }}
+        INPUT_DISABLE_CACHE: ${{ inputs.disable-cache }}
+        INPUT_CUSTOM_SHELL_NAME: ${{ inputs.custom-shell-name || 'vmsh' }}
+        INPUT_CREATE_USER: ${{ inputs.drop-root }}
       run: |
+        # run in nested VM
         set -eu
         if [ -n "$ANYVM_ACTION_PATH" ]; then
+          if [ -x /bin/dd ]; then
+            # stir the host entropy
+            for i in {1..100}; do
+            dd if=/dev/urandom of=/dev/null bs=1M count=1 status=none;
+            done ;
+          fi ;
           entrypoint="${ANYVM_ACTION_PATH}/utils/entrypoint.sh"
           if [ -x "${entrypoint}" ] ; then
-            # TODO: handle -e, -f and -r checks with improved diagnostics too
             "${ANYVM_ACTION_PATH}/utils/entrypoint.sh" ;
             unset entrypoint 2>/dev/null ;
           else
-            printf "::error title='BUG'::%s\n" "Missing anyvm-in-ci entrypoint (This is a BUG)" ;
-            unset entrypoint 2>/dev/null || true ;
-            exit 1
+            printf "::debug::=> %s\n" "Checking permissions of entrypoint" ;
+            if [ -r "${entrypoint}" ] || [ -f "${entrypoint}" ] ; then
+              printf "::debug::..=> %s\n" "Entrypoint found but it has incorrect permissions" ;
+              printf "::error title='BUG'::%s\n" "Incorrect permissions for anyvm-in-ci entrypoint (This is a BUG)" ;
+              unset entrypoint 2>/dev/null || true ;
+              exit 1
+            else
+              printf "::debug::..=> %s\n" "Checking for any entrypoint" ;
+              if [ -e "${entrypoint}" ] ; then
+                printf "::debug::....=> %s\n" "Entrypoint found but is not something we can invoke" ;
+                printf "::error title='BUG'::%s\n" "Invalid anyvm-in-ci entrypoint path (Must be a file)" ;
+                unset entrypoint 2>/dev/null || true ;
+                exit 1
+              else
+                printf "::debug::....=> %s\n" "Entrypoint NOT found at all" ;
+                printf "::error title='BUG'::%s\n" "Missing anyvm-in-ci entrypoint (This is a BUG)" ;
+                unset entrypoint 2>/dev/null || true ;
+                exit 1
+              fi ;
+            fi ;
           fi ;
         else
           printf "::debug::%s\n" "Can't find empty action path." ;
           printf "::error title='INVALID'::%s\n" "Missing anyvm-in-ci utilities." ;
           exit 1
         fi ;
+    - name: Save Cache
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ${{ inputs.cache-dir }}/anyvm.py
+          ~/id_ci_vm_ephemeral_*
+          ~/id_user_ci_*
+          ${{ inputs.cache-dir }}/anyvm-in-ci/bin/**
+        key: ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
+        lookup-only: true
     - name: "Cleanup any remaining VMs (EXPERIMENTAL)"
       id: anyvm-post-cleanup
       shell: bash
@@ -151,9 +295,12 @@ runs:
         ANYVM_ACTION_PATH: ${{ github.action_path }}
         RUNNER_DEBUG: ${{ runner.debug }}
       run: |
+        # Reap VM
+        printf "::group::%s\n" "Reaping" ;
         if [ "${RUNNER_DEBUG:-}" = "1" ]; then printf "::debug:: %s\n" "Looking for '${ANYVM_ACTION_PATH}'" ; fi ;
         if [ -n "$ANYVM_ACTION_PATH" ] && [ -x "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ] ; then
           sudo "${ANYVM_ACTION_PATH}/utils/stop-qemu-vm-safe.sh" ;
         else
           "utils/stop-qemu-vm-safe.sh" || exit 1 ;
         fi ;
+        printf "::endgroup::\n" ;
