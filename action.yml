@@ -202,14 +202,15 @@ runs:
         path: |
           ${{ inputs.cache-dir }}/**/anyvm.py
           ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/*.qemu
+          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/**/*.qemu
           ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/*.qcow2.zst
-          ~/id_ci_vm_ephemeral_*
-          ~/id_user_ci_*
-          /opt/**/anyvm-in-ci/bin/${{ inputs.custom-shell-name || 'vmsh' }}
-        key: ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}
+          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/**/*.qcow2
+          ~/.ssh/id_ci_vm_ephemeral_*
+          ~/.ssh/id_user_ci_*
+          ${{ runner.tool_cache }}/anyvm-in-ci/bin/${{ inputs.custom-shell-name || 'vmsh' }}
+        key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}
         restore-keys: |
-          ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-
-          ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
+          ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
     - name: "Validate inputs and run anyvm"
       id: anyvm-entrypoint
       shell: bash
@@ -282,12 +283,12 @@ runs:
       with:
         path: |
           ${{ inputs.cache-dir }}/anyvm.py
-          ~/id_ci_vm_ephemeral_*
-          ~/id_user_ci_*
-          ${{ inputs.cache-dir }}/anyvm-in-ci/bin/**
-        key: ${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
+          ~/.ssh/id_ci_vm_ephemeral_*
+          ~/.ssh/id_user_ci_*
+          ${{ runner.tool_cache }}/anyvm-in-ci/bin/**
+        key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
         lookup-only: true
-    - name: "Cleanup any remaining VMs (EXPERIMENTAL)"
+    - name: "Cleanup any remaining VMs"
       id: anyvm-post-cleanup
       shell: bash
       if: ${{ always() }}

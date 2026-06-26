@@ -321,15 +321,20 @@ done
 
 debug_log "Ensure cache dirs exists" &
 
-for SOME_CACHE_DIR in "$ANYVM_CACHE_DIR" "$DATA_DIR" "$DATA_DIR/images" "${VMSH_DIR}"; do
+for SOME_CACHE_DIR in "$ANYVM_CACHE_DIR" "$DATA_DIR" "$DATA_DIR/images" "${VMSH_DIR}" "${HOME:-.}/.ssh"; do
 	mkdir -p "$SOME_CACHE_DIR" ;
 	debug_log "=> Checking for \"$SOME_CACHE_DIR\"" ;
 	if [ -d "$SOME_CACHE_DIR" ]; then
 		debug_log "=> Found \"$SOME_CACHE_DIR\"" ;
 	else
-		die "Required directory could not be created correctly: $SOME_CACHE_DIR" ;
+		debug_log "=> Creating \"$SOME_CACHE_DIR\"" ;
+		mkdir -p "$SOME_CACHE_DIR" || die "Required directory could not be created correctly: $SOME_CACHE_DIR" ;
 	fi ;
 done
+
+# restrict .ssh
+debug_log "..=> restricting permissions to ${HOME:-.}/.ssh"
+chmod 700 "${HOME:-.}/.ssh"
 
 # optional tools: rsync brew apt-get yum choco etc.
 
@@ -512,7 +517,7 @@ printf "::endgroup::\n";
 debug_log "Refreshing VM keys" ;
 # 4. RSA-3072 ephemeral key generation with expiry comment
 # TODO: don't use date (birthday-weakness)
-EPHEM_KEY="${HOME:-.}/id_ci_vm_ephemeral_$(safe_uuidgen)_rsa"
+EPHEM_KEY="${HOME:-.}/.ssh/id_ci_vm_ephemeral_$(safe_uuidgen)_rsa"
 ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -V -1m:+6h -C "ci-vm-ephemeral-$(date -u +%s)" >/dev/null || die "Failed to generate ephemeral keys"
 
 debug_log "Checking for new ephemeral key pair"
@@ -600,7 +605,7 @@ if matches "$VM_USER_CREATE" "true"; then
 	GUEST_USER="${HOST_USER:-runner}"
 	GUEST_UID=$(id -g "${GUEST_USER}" 2>/dev/null || printf 501)
 	USER_KEY_ID="ci_$(safe_uuidgen)"
-	USER_KEY="${HOME:-${PWD:-.}}/id_user_${USER_KEY_ID:-ci_$$}_rsa"
+	USER_KEY="${HOME:-${PWD:-.}}/.ssh/id_user_${USER_KEY_ID:-ci_$$}_rsa"
 	mask_inputs "${USER_KEY_ID}";
 	# TODO: match the UID of GUEST_USER
 	debug_log "Cloning CI user to guest VM"
