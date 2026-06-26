@@ -304,3 +304,26 @@ runs:
           "utils/stop-qemu-vm-safe.sh" || exit 1 ;
         fi ;
         printf "::endgroup::\n" ;
+    - name: "Cleanup any remaining SSH Keys"
+      id: anyvm-post-cleanup-ssh
+      shell: bash
+      if: ${{ always() }}
+      env:
+        RUNNER_DEBUG: ${{ runner.debug }}
+      run: |
+        # Reap VM
+        printf "::group::%s\n" "Shredding" ;
+        if [ -d "${HOME:-.}"/.ssh ] ; then
+          _RM_VERBOSE_FLAG="";
+          if [ "${RUNNER_DEBUG:-}" = "1" ]; then
+            printf "::debug:: %s\n" "Looking for '~/.ssh/*'" ;
+            _RM_VERBOSE_FLAG="-v";
+          fi ;
+          if [ -f "${HOME:-.}"/.ssh/id_ci_vm_ephemeral_* ] ; then
+            rm $_RM_VERBOSE_FLAG -f "${HOME:-.}"/.ssh/id_ci_vm_ephemeral_* 2>/dev/null || true ;
+          fi ;
+          if [ -f "${HOME:-.}"/.ssh/id_user_ci_* ] ; then
+            rm $_RM_VERBOSE_FLAG -f "${HOME:-.}"/.ssh/id_user_ci_* 2>/dev/null || true ;
+          fi ;
+        fi ;
+        printf "::endgroup::\n" ;
