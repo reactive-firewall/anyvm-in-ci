@@ -91,6 +91,104 @@ get_latest_vm_release() {
     fi
   }
 
+  # sort_versions: portable replacement for `sort -V`
+  # Usage: sort_versions < file
+  #        printf '%s\n' a b c | sort_versions
+
+  sort_versions() {
+    # We tag each record with its original line, then sort by a
+    # locale-independent “version key”.
+    # The version key is built as a sequence of:
+    #   - non-digit segments: "-" + uppercase chars
+    #   - digit runs:          zero-padded numeric value + length marker
+    #
+    # This is a “best-effort” mimic of sort -V ordering:
+    #   • numeric runs compared by numeric value
+    #   • non-numeric parts compared lexicographically
+    #   • shorter length numeric runs (e.g., "1" vs "001") still compare equal numerically
+
+    awk '
+    function upcase(s,  i, c, o) {
+      o = ""
+      for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c >= "a" && c <= "z") c = sprintf("%c", ord = index("abcdefghijklmnopqrstuvwxyz", substr(c,1,1)) ? ord : 0)
+        # simpler: ASCII math
+        if (substr(c,1,1) >= "a" && substr(c,1,1) <= "z") {
+          c = sprintf("%c", ord(substr(c,1,1)) - 32)
+        }
+        o = o c
+      }
+      return o
+    }
+    # portable ord()
+    function ord(ch,  code) { code = sprintf("%d", substr(ch,1,1)); return code }
+
+    function makekey(s,   i, n, ch, isdig, buf, seg, out, len, num, pad) {
+      out = ""
+      n = length(s)
+      i = 1
+      while (i <= n) {
+        ch = substr(s, i, 1)
+        isdig = (ch ~ /[0-9]/)
+
+        if (isdig) {
+          j = i
+          while (j <= n && substr(s, j, 1) ~ /[0-9]/) j++
+          seg = substr(s, i, j - i)          # digit run
+          len = length(seg)
+
+          # Strip leading zeros for numeric comparison,
+          # but keep length marker to stabilize equal values.
+          sub(/^0+/, "", seg)
+          if (seg == "") seg = "0"
+          # Pad numeric string to fixed width using length of original run.
+          # For portability, we avoid big integers and compare by (trimmed numeric, len).
+          # Use two fields:
+          #   field A: trimmed numeric right-padded to 20 (cap) with spaces
+          #   field B: length of trimmed numeric
+          # Cap to 20 chars to keep key bounded; for longer numbers,
+          # lexicographic of trimmed digits still works if lengths match.
+          if (length(seg) > 20) {
+            pad = substr(seg, 1, 20)
+            out = out "D" pad "L" sprintf("%06d", length(seg))
+          } else {
+            out = out "D" sprintf("%020s", seg) "L" sprintf("%06d", length(seg))
+          }
+
+          # length of original digit run as a tie-breaker (closer to sort -V stability)
+          out = out "O" sprintf("%06d", len)
+          i = j
+        } else {
+          # non-digit run: compare lexicographically
+          j = i
+          while (j <= n && substr(s, j, 1) !~ /[0-9]/) j++
+          seg = substr(s, i, j - i)
+
+          # Uppercase for more consistent cross-platform behavior
+          # (sort -V effectively treats bytes; we normalize case to reduce variance)
+          # Convert ASCII letters to uppercase; leave others.
+          for (k = 1; k <= length(seg); k++) {
+            c = substr(seg, k, 1)
+            if (c >= "a" && c <= "z") c = sprintf("%c", ord(c) - 32)
+            out = out "T" c
+          }
+          i = j
+        }
+      }
+      return out
+    }
+
+    {
+      line = $0
+      # Build a key; prefix with a field separator that sorts before digits/letters.
+      key = makekey(line)
+      # Emit: key<TAB>original line
+      print key "\t" line
+    }
+    ' | sort -t "$(printf '\t')" -k1,1 | cut -f2-
+  }
+
   case "$name" in
     freebsd)
       # Use official release directory listing; pick highest dotted release
@@ -112,7 +210,7 @@ get_latest_vm_release() {
           }
         ' |
         awk '!seen[$0]++{print}' |    # dedupe while preserving portability
-        ( sort -V 2>/dev/null || sort ) |
+        sort_versions |
         tail -n2 | head -n1 || return 1  # use penultimate - skip latest Dev branch
       ;;
     ghostbsd)
@@ -122,7 +220,7 @@ get_latest_vm_release() {
         jq -r '.[].name' |
         grep '^stable/' |
         sed 's|^stable/||' |
-        ( sort -V 2>/dev/null || sort ) |
+        sort_versions |
         tail -n1 || return 1
       ;;
     openbsd)
@@ -130,6 +228,7 @@ get_latest_vm_release() {
       fetch "https://www.openbsd.org/" |
         tr '\n' ' ' |
         sed -n 's/.*[Cc]urrent release is[^>]*>[^>]*OpenBSD[[:space:]]*\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' |
+        sort_versions |
         head -n1 || return 1
       ;;
     netbsd)
@@ -138,14 +237,14 @@ get_latest_vm_release() {
         tr '\n' ' ' |
         grep -oEi 'NetBSD[ _-]?[0-9]+\.[0-9]+|/releases/[0-9]+\.[0-9]+' |
         sed -E 's#.*/releases/([0-9]+\.[0-9]+).*#\1#; s/.*[Nn]et[Bb][Ss][Dd][ _-]?([0-9]+\.[0-9]+).*/\1/' |
-        ( sort -V 2>/dev/null || sort ) | uniq | tail -n1 || return 1
+        sort_versions | uniq | tail -n1 || return 1
       ;;
     dragonflybsd|dragonfly)
       # DragonFly release info on homepage
       fetch "https://www.dragonflybsd.org/" |
         grep -oEi 'DragonFly[ _-]?[0-9]+\.[0-9]+|/releases/[0-9]+\.[0-9]+' |
         sed -E 's#.*/releases/([0-9]+\.[0-9]+).*#\1#; s/.*[Dd]ragon[Ff]ly[ _-]?([0-9]+\.[0-9]+).*/\1/' |
-        ( sort -V 2>/dev/null || sort ) | uniq | tail -n1 || return 1
+        sort_versions | uniq | tail -n1 || return 1
       ;;
     midnightbsd|midnight)
       # MidnightBSD latest stable on homepage or releases
@@ -154,23 +253,7 @@ get_latest_vm_release() {
         grep -oEi 'Midnight[Bb][Ss][Dd][- _]*[0-9]+(\.[0-9]+)*' |
         sed -E 's/.*[Mm]idnight[Bb][Ss][Dd][- _]*([0-9]+(\.[0-9]+)*).*/\1/' |
         awk '!seen[$0]++{print}' |
-        awk -F. '
-          {
-            # build fixed-width key of up to 5 components for sorting
-            key = ""
-            for (i=1;i<=5;i++) {
-              if (i<=NF) {
-                v = $i + 0
-              } else {
-                v = 0
-              }
-              # pad numeric fields to 6 digits
-              s = sprintf("%06d", v)
-              key = key s
-            }
-            print key "\t" $0
-          }
-        ' | sort | awk -F'\t' '{print $2}' | tail -n1 || return 1
+        sort_versions | awk -F'\t' '{print $2}' | tail -n1 || return 1
       ;;
     solaris)
       # Oracle Solaris 11/12 naming — prefer "11" or "11.4" if present on page
@@ -188,13 +271,14 @@ get_latest_vm_release() {
       fetch "https://www.omnios.org/download.html" |
         tr '\n' ' ' |
         grep -oEi 'omnios-r[0-9]{6}[r]?\.iso' | grep -oEi 'omnios-r[0-9]{6}[r]?' |
-        sed -E 's/.*r([0-9]{6}).*/\1/' |
+        sed -E 's/.*r([0-9]{6}).*/\1/' | sort_versions |
         head -n1 || return 1
       ;;
     openindiana)
       # OpenIndiana Hipster has versions like "Hipster-YYYY.MM"
       fetch "https://www.openindiana.org/" |
         sed -n 's/.*Hipster[- ]\([0-9][0-9][0-9][0-9]\.[0-9][0-9]\).*/\1/p' |
+        sort_versions |
         head -n1 || return 1
       ;;
     tribblix)
@@ -210,12 +294,12 @@ get_latest_vm_release() {
       # Haiku releases use version like "r1beta1" — attempt to get latest tag via GitHub API
       test -x "$(command -v jq)" || return 126 ;
       fetch "https://api.github.com/repos/haiku/haiku/branches" | jq -r '.[].name' |
-        grep '^r.*' | ( sort -V 2>/dev/null || sort ) | tail -n1 || return 1
+        grep '^r.*' | sort_versions | tail -n1 || return 1
       ;;
     ubuntu)
       # Ubuntu publishes current LTS and interim names on releases.ubuntu.com
       fetch "https://changelogs.ubuntu.com/meta-release" |
-        sed -n 's/^Version: //p' | cut -d\  -f1-1 |
+        sed -n 's/^Version: //p' | cut -d\  -f1-1 | sort_versions |
         tail -n1 || return 1
       ;;
     blissos|bliss)
