@@ -45,8 +45,8 @@ jobs:
             freebsd-version 2>&1 || true
             # Example package operations; keep permission/rate limits in mind
             if command -v pkg >/dev/null 2>&1; then
-              pkg update -f 2>&1 || true
-              pkg install -y llvm22 2>&1 || true
+              su -c 'pkg update -f' 2>&1 || true
+              su -c 'pkg install -y sudo' 2>&1 || true
             fi
             # Ensure scripts are executable
             # chmod +x ./run-ci.sh
