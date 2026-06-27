@@ -6,9 +6,9 @@ Key goals
 - Let you run CI steps inside non-Linux OSes (FreeBSD, OpenBSD, NetBSD, Solaris, Haiku, ...) on GitHub-hosted or self-hosted runners.
 - Prepare the guest VM for CI pipelines autonomously by:
   - replicating the repository workspace into the guest,
-  - forwarding non-sensitive GitHub environment variables into SSH sessions, (with optional extensibility to all variables)
+  - forwarding non-sensitive GitHub environment variables into SSH sessions (with optional extensibility to all variables)
   - generating ephemeral SSH keys and atomically rotating guest authorized_keys away from per-baked keys,
-  - optionally creating a non-root user that mirrors the GH host `runner` user (with unprivliged ephemeral keys),
+  - optionally creating a non-root user that mirrors the GH host `runner` user (with unprivileged ephemeral keys),
   - providing auto-boxing of step run instructions for the guest VM
 - Minimize host exposure (VNC is disabled in CI as default; SSH is limited to localhost).
 
@@ -26,8 +26,8 @@ Status
 | `release` | string | no | — | OS release/version of the VM image (passed to anyvm) |
 | `arch` | choice | no | null | VM CPU architecture. Options: `x86_64`, `aarch64`, `riscv64`, `s390x`, `powerpc64`, `ppc64le`, `sparc64` |
 | `envs` | string | no | — | Extra environment variables to forward to the VM (newline-separated KEY=VALUE pairs or names to forward via SSH SendEnv as configured) |
-| `mem` | number | yes | `3072` | Memory (MB) for the VM. Note: entrypoint.sh has a different fallback default (6144) — see implementation notes. |
-| `cpu` | number | no | autodetect | Number of CPU cores for the VM |
+| `mem` | number | no | `3072` | Memory (MB) for the VM. Note: entrypoint.sh has a different fallback default (6144) — see implementation notes. |
+| `cpu` | number | no | `autodetect` | Number of CPU cores for the VM |
 | `nat` | string | no | — | NAT port forwarding rules (passed to anyvm) |
 | `usesh` | boolean | no | `true` | Use `sh` as the default shell in the VM |
 | `sync` | choice | no | `scp` | Strategy for synchronizing the workspace to/from the VM. Options: `rsync`, `scp` |
@@ -39,7 +39,7 @@ Status
 | `disable-cache` | boolean | no | `false` | Disable local caching for packages and VM images |
 | `custom-shell-name` | string | no | `vmsh` | Name for the generated wrapper script that runs commands inside the VM |
 | `ipv6-enabled` | boolean | no | `false` | Enable IPv6 networking mode inside the guest |
-| `token` | string | Optional (required GHES setups) | Github hosted workflow token or null | Token for GitHub API operations including when fetching anyvm/ builders when required (defaults to `github.token` on github.com) |
+| `token` | string | Optional (required for GHES) | `github.token` or null | Token for GitHub API operations, including when fetching anyvm builders when required (defaults to `github.token` on github.com) |
 
 ## Outputs
 
