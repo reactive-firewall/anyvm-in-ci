@@ -209,7 +209,7 @@ runs:
           ${{ runner.tool_cache }}/anyvm-in-ci/bin/${{ inputs.custom-shell-name || 'vmsh' }}
         key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
         restore-keys: |
-          ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}
+          ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-
     - name: "Validate inputs and run anyvm"
       id: anyvm-entrypoint
       shell: bash
