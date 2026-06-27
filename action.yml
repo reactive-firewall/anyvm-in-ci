@@ -201,16 +201,15 @@ runs:
       with:
         path: |
           ${{ inputs.cache-dir }}/**/anyvm.py
-          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/*.qemu
-          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/**/*.qemu
-          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/*.qcow2.zst
+          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/images/*.qemu
+          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/images/**/*.qemu
+          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/images/*.qcow2.zst
+          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/images/**/*.qcow2
           ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/**/*.qcow2
-          ~/.ssh/id_ci_vm_ephemeral_*
-          ~/.ssh/id_user_ci_*
           ${{ runner.tool_cache }}/anyvm-in-ci/bin/${{ inputs.custom-shell-name || 'vmsh' }}
-        key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}
+        key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
         restore-keys: |
-          ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
+          ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}
     - name: "Validate inputs and run anyvm"
       id: anyvm-entrypoint
       shell: bash
@@ -282,9 +281,7 @@ runs:
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: |
-          ${{ inputs.cache-dir }}/anyvm.py
-          ~/.ssh/id_ci_vm_ephemeral_*
-          ~/.ssh/id_user_ci_*
+          ${{ inputs.cache-dir }}/**/anyvm.py
           ${{ runner.tool_cache }}/anyvm-in-ci/bin/**
         key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
         lookup-only: true

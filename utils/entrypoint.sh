@@ -334,7 +334,7 @@ done
 
 # restrict .ssh
 debug_log "..=> restricting permissions to ${HOME:-.}/.ssh"
-chmod 700 "${HOME:-.}/.ssh"
+chmod 700 "${HOME:-.}/.ssh" || die "Could not set correct permissions on ~/.ssh (requires x700)" ;
 
 # optional tools: rsync brew apt-get yum choco etc.
 
