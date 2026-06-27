@@ -244,7 +244,7 @@ get_latest_vm_release() {
       fetch "https://www.dragonflybsd.org/" |
         grep -oEi 'DragonFly[ _-]?[0-9]+\.[0-9]+|/releases/[0-9]+\.[0-9]+' |
         sed -E 's#.*/releases/([0-9]+\.[0-9]+).*#\1#; s/.*[Dd]ragon[Ff]ly[ _-]?([0-9]+\.[0-9]+).*/\1/' |
-        sort_versions | uniq | tail -n1 || return 1
+        ( sort_versions 2>/dev/null || sort ) | uniq | tail -n1 || return 1
       ;;
     midnightbsd|midnight)
       # MidnightBSD latest stable on homepage or releases
@@ -253,7 +253,7 @@ get_latest_vm_release() {
         grep -oEi 'Midnight[Bb][Ss][Dd][- _]*[0-9]+(\.[0-9]+)*' |
         sed -E 's/.*[Mm]idnight[Bb][Ss][Dd][- _]*([0-9]+(\.[0-9]+)*).*/\1/' |
         awk '!seen[$0]++{print}' |
-        sort_versions | awk -F'\t' '{print $2}' | tail -n1 || return 1
+        sort_versions | tail -n1 || return 1
       ;;
     solaris)
       # Oracle Solaris 11/12 naming — prefer "11" or "11.4" if present on page
@@ -291,10 +291,10 @@ get_latest_vm_release() {
 #        ( sort -V 2>/dev/null || sort ) | uniq | tail -n1 || return 1
       ;;
     haiku)
-      # Haiku releases use version like "r1beta1" — attempt to get latest tag via GitHub API
+      # Haiku releases use "version" like "r1beta1" — attempt to get latest branch via GitHub API
       test -x "$(command -v jq)" || return 126 ;
       fetch "https://api.github.com/repos/haiku/haiku/branches" | jq -r '.[].name' |
-        grep '^r.*' | sort_versions | tail -n1 || return 1
+        grep '^r.*' | sort | tail -n1 || return 1
       ;;
     ubuntu)
       # Ubuntu publishes current LTS and interim names on releases.ubuntu.com
@@ -303,11 +303,19 @@ get_latest_vm_release() {
         tail -n1 || return 1
       ;;
     blissos|bliss)
-      # Bliss OS releases on GitHub; use latest release tag
-      { fetch "https://api.github.com/repos/BlissRoms-x86/BlissBench/releases/latest" 2>/dev/null ||
-        fetch "https://api.github.com/repos/BlissRoms/Bliss/releases/latest" ;} |
-        sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' |
-        head -n1 || return 1
+      # BEST-EFFORT attempt only (there is missing support in anyvm builder circa july 2026)
+      # version 16 was typhoon-x86 (only known supported varient by builder 2.0.2)
+      # version 17 was universe-x86
+      # version 18 is voyager-x86
+      # project moved github org after version 15 (from project BlissRoms-x86/manifest)
+      # to a new github org starting with 16 (to current project BlissOS/platform_manifest)
+      # Bliss OS releases on GitHub; use latest release branch
+      test -x "$(command -v jq)" || return 126 ;
+      { { fetch "https://api.github.com/repos/BlissRoms-x86/manifest/branches" 2>/dev/null |
+          jq -r '.[].name' ;} 2>/dev/null;
+        { fetch "https://api.github.com/repos/BlissOS/platform_manifest/branches" 2>/dev/null |
+          jq -r '.[].name' ;} 2>/dev/null ;} |
+        grep '.*-x86' | tail -n1 || return 1
       ;;
     *)
       return 1
