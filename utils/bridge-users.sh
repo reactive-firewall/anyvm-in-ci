@@ -104,6 +104,7 @@ VM_CI_USER="${GUEST_USER:-runner}"
 USER_KEY="${USER_KEY:-}"
 EPHEM_KEY_TYPE="${EPHEM_KEY_TYPE:-rsa}"
 EPHEM_KEY_BITS="${EPHEM_KEY_BITS:-3072}"
+_VERBOSE_FLAG=$([ "${DEBUG:-0}" -eq 1 ] && printf '%s' "-v" || printf "" ;);
 
 # helper: conditional diagnostic with message
 debug_user_log(){ if [ "${DEBUG:-0}" -eq 1 ]; then printf '::debug:: %s\n' "$*"; fi; }
@@ -165,14 +166,13 @@ build_user_sendenv_opts() {
 	printf '%s' "$sendenv_opts"
 }
 
-# TODO: verify ANYVM_CREATE_CI_USER_FILE is a file that exists
+# Verify ANYVM_CREATE_CI_USER_FILE is a file that exists
 if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 	debug_user_log "Preparing script to clone user on to Guest VM" ;
 	CREATE_CI_USER_SCRIPT_PATH="$BRIDGE_DATA_DIR/create_user_$$.sh"
-	# TODO: add -v only in debug mode
-	cp -f "${ANYVM_CREATE_CI_USER_FILE}" "$CREATE_CI_USER_SCRIPT_PATH"
+	cp ${_VERBOSE_FLAG:-} -f "${ANYVM_CREATE_CI_USER_FILE}" "$CREATE_CI_USER_SCRIPT_PATH"
 	debug_user_log "=> Staged" & debug_user_log "..=> Setting Permissions on staged script" ;
-	chmod +x "$CREATE_CI_USER_SCRIPT_PATH"
+	chmod ${_VERBOSE_FLAG:-} +x "$CREATE_CI_USER_SCRIPT_PATH"
 
 	debug_user_log "Ready to transfer \"${CREATE_CI_USER_SCRIPT_PATH}\" to Guest VM" &
 
@@ -234,7 +234,7 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 	fi
 
 	# best effort cleanup
-	rm -f "$CREATE_CI_USER_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
+	rm ${_VERBOSE_FLAG:-} -f "$CREATE_CI_USER_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
 fi;
 unset BRIDGE_VM
 unset BRIDGE_VM_PORT
@@ -242,6 +242,7 @@ unset BRIDGE_DATA_DIR
 unset CREATE_CI_USER_SCRIPT_PATH
 unset VM_CI_USER
 unset SSH_USER_EPHEMERAL_OPTS
+unset _VERBOSE_FLAG
 unset build_user_sendenv_opts || true
 unset debug_user_log || true
 unset mask_user_inputs || true
