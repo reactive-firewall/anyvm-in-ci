@@ -168,16 +168,26 @@ build_user_sendenv_opts() {
 
 # Verify ANYVM_CREATE_CI_USER_FILE is a file that exists
 if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
-	debug_user_log "Preparing script to clone user on to Guest VM" ;
+	debug_user_log "Preparing scripts to clone user on to Guest VM" ;
+
+	# See also: https://github.com/reactive-firewall/anyvm-in-ci/issues/24
+	# A. Prepare stub for installing sudo pkg in an OS agnostic way.
+	VM_DO_SUDO_SCRIPT_PATH="$BRIDGE_DATA_DIR/ensure_sudo_$$.sh"
+	cp ${_VERBOSE_FLAG:-} -f "${ANYVM_VM_DO_SUDO_FILE}" "$VM_DO_SUDO_SCRIPT_PATH"
+	debug_user_log "=> Staged ensure_sudo" &
+	# B. Prepare stub for creating user an OS agnostic way.
 	CREATE_CI_USER_SCRIPT_PATH="$BRIDGE_DATA_DIR/create_user_$$.sh"
 	cp ${_VERBOSE_FLAG:-} -f "${ANYVM_CREATE_CI_USER_FILE}" "$CREATE_CI_USER_SCRIPT_PATH"
-	debug_user_log "=> Staged" & debug_user_log "..=> Setting Permissions on staged script" ;
+	debug_user_log "=> Staged create_user" & debug_user_log "..=> Setting Permissions on staged scripts" ;
+	# Chmod VM_DO_SUDO_SCRIPT_PATH
+	chmod ${_VERBOSE_FLAG:-} +x "$VM_DO_SUDO_SCRIPT_PATH"
+	debug_user_log "Ready to transfer \"${VM_DO_SUDO_SCRIPT_PATH}\" to Guest VM"
+	# Chmod CREATE_CI_USER_SCRIPT_PATH
 	chmod ${_VERBOSE_FLAG:-} +x "$CREATE_CI_USER_SCRIPT_PATH"
-
 	debug_user_log "Ready to transfer \"${CREATE_CI_USER_SCRIPT_PATH}\" to Guest VM" &
 
 	debug_user_log "Generating VM User keys" ;
-	ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -V -1m:+6h -C "${GUEST_USER:-runner}-$()" >/dev/null || printf "::error title='FAILED'::%s\n" "Failed to generate ephemeral user keys"
+	ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -V -1m:+6h -C "${GUEST_USER:-runner}-vm-ephemeral-$(date -u +%s)" >/dev/null || printf "::error title='FAILED'::%s\n" "Failed to generate ephemeral user keys"
 	debug_user_log "Checking for new ephemeral user key pair"
 
 	if [ ! -f "$USER_KEY" ] || [ ! -f "$USER_KEY.pub" ]; then
@@ -188,9 +198,11 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 		# TODO: check that found keys are indeed a pair
 		ssh-keygen -lf "$USER_KEY.pub"
 	fi
-
-	USER_PUB_CONTENT="$(cat ${USER_KEY}.pub)"
-	mask_user_inputs "$USER_PUB_CONTENT";
+	# now mask pub key before sending it to guest VM
+	if [ -f "$USER_KEY.pub" ]; then
+		USER_PUB_CONTENT="$(cat ${USER_KEY}.pub)"
+		mask_user_inputs "$USER_PUB_CONTENT";
+	fi;
 
 	# 4d. copy rotation script and run it using baked key (best-effort)
 	if [ -f "$USER_KEY" ]; then
@@ -199,11 +211,15 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 		mask_user_inputs "${USER_PUB_TFILE}";
 		debug_user_log "=> Ready to transfer user public key data to Guest VM" ;
 
-		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || printf '::error:: %s\n' "failed to scp create_user script" ;
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$VM_DO_SUDO_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/ensure_sudo.sh || printf '::error:: %s\n' "failed to scp create_user script" ;
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || printf '::error:: %s\n' "failed to scp ensure_sudo script" ;
 		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || printf '::error:: %s\n' "failed to scp create_user data" ;
 		debug_user_log "..=> Transferred" & debug_user_log "..=> Waiting for user sync" &
 
-		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=1 sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}" || printf '::error:: %s\n' "warning: create_user execution failed with $?" ;
+		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=${DEBUG:-1} sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}" || printf '::error:: %s\n' "warning: create_user execution failed with $?" ;
+		debug_user_log "..=> Created"
+		# See also: https://github.com/reactive-firewall/anyvm-in-ci/issues/24
+		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=${DEBUG:-1} sh /tmp/ensure_sudo.sh ${VM_CI_USER} 2" || printf '::error:: %s\n' "warning: ensure_sudo execution failed with $?" ;
 		debug_user_log "..=> Synced"
 		unset USER_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
 	else
@@ -211,10 +227,11 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 	  debug_user_log "Nothing transferred"
 	fi
 
+	# See also: https://github.com/reactive-firewall/anyvm-in-ci/issues/24
 	# debug_user_log "=> Attempt to drop root access" &
 	# SSH_EPHEMERAL_OPTS="";
 	# unset SSH_EPHEMERAL_OPTS;
-	# TODO: deal with root keys more securely
+	# TODO: deal with root login more securely
 
 	debug_user_log "=> Will now try ephemeral user key pair"
 	SSH_USER_EPHEMERAL_OPTS="";
@@ -234,12 +251,14 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 	fi
 
 	# best effort cleanup
+	rm ${_VERBOSE_FLAG:-} -f "$VM_DO_SUDO_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
 	rm ${_VERBOSE_FLAG:-} -f "$CREATE_CI_USER_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
 fi;
 unset BRIDGE_VM
 unset BRIDGE_VM_PORT
 unset BRIDGE_DATA_DIR
 unset CREATE_CI_USER_SCRIPT_PATH
+unset VM_DO_SUDO_SCRIPT_PATH
 unset VM_CI_USER
 unset SSH_USER_EPHEMERAL_OPTS
 unset _VERBOSE_FLAG
