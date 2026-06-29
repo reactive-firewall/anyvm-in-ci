@@ -99,6 +99,9 @@ fi
 
 OS="$(uname -s 2>/dev/null || echo unknown)"
 
+# helper: fail with message
+die_stub(){ printf "::error title='ERROR':: %s\n" "$*" >&2; exit 1; }
+
 install_sudo() {
   if command -v sudo >/dev/null 2>&1; then
     return 0
@@ -157,12 +160,12 @@ add_user_to_admin_group() {
 
   if command -v usermod >/dev/null 2>&1; then
     getent group "$GROUP" >/dev/null 2>&1 || groupadd "$GROUP" >/dev/null 2>&1 || true
-    usermod -aG "$GROUP" "$USER_NAME" >/dev/null 2>&1 || true
+    usermod -aG "$GROUP" "$USER_NAME" >/dev/null 2>&1 || die_stub "User promotion to sudo failed" ;
     return 0
   fi
 
   if command -v pw >/dev/null 2>&1; then
-    pw groupmod "$GROUP" -m "$USER_NAME" >/dev/null 2>&1 || true
+    pw groupmod "$GROUP" -m "$USER_NAME" >/dev/null 2>&1 || die_stub "User promotion to sudo failed" ;
     return 0
   fi
 
@@ -235,7 +238,7 @@ ensure_sudoers_rule() {
     if [ -n "$WHITELIST_PKG_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_PKG_INSTALL"; fi
     if [ -n "$WHITELIST_PKG_UPDATE" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_PKG_UPDATE"; fi
     if [ -n "$WHITELIST_APT_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_APT_INSTALL"; fi
-    if [ -n "$WHITELIST_PKG_UPDATE" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_PKG_UPDATE"; fi
+    if [ -n "$WHITELIST_APT_UPDATE" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_APT_UPDATE"; fi
     if [ -n "$WHITELIST_APK_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_APK_INSTALL"; fi
     if [ -n "$WHITELIST_NPM_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_NPM_INSTALL"; fi
     if [ -n "$WHITELIST_PIP_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_PIP_INSTALL"; fi
@@ -257,24 +260,28 @@ ensure_sudoers_rule() {
   else
     # MODE=0: password for admin group (no NOPASSWD)
     RULE="%$GROUP ALL=(ALL) ALL"
+    printf "::warning title='SUDO-INTERACTIVE'::%s\n" "Interactive mode for sudo is intended for testing interactively, and can cause hangs when run in headless CI pipelines.";
   fi
 
   # If /etc/sudoers.d exists, use it.
   if [ -d "$SUDOERS_D" ]; then
-    mkdir -p "$SUDOERS_D" >/dev/null 2>&1 || true
+    # e.g., can assume mkdir -p "$SUDOERS_D" >/dev/null 2>&1 || true
     umask 022
     # Write rule atomically if possible
     tmp="${FILE}.tmp.$$"
     # If MODE=2 and whitelist exists, RULE may contain newlines; preserve them.
     # shellcheck disable=SC2059
     printf "%s\n" "$RULE" > "$tmp"
-    chmod 0440 "$tmp" >/dev/null 2>&1 || true
+    chmod 0440 "$tmp" >/dev/null 2>&1 || die_stub "sudoers could not be chmoded" ;
     mv "$tmp" "$FILE"
-    chmod 0440 "$FILE" >/dev/null 2>&1 || true
+    chmod 0440 "$FILE" >/dev/null 2>&1 || true ;
+    # early cleanup
+    { chmod 600 "$tmp" >/dev/null 2>&1 || die_stub "TMP could not be un-chmoded (for cleanup)" ;
+      rm -f "$tmp" >/dev/null 2>&1 || die_stub "TMP could not cleaned up" ;} || true ; # best-effort
 
     # Validate sudoers if visudo exists
     if command -v visudo >/dev/null 2>&1; then
-      visudo -c >/dev/null 2>&1 || true
+      visudo -c >/dev/null 2>&1 || die_stub "sudoers validation failed" ;
     fi
     return 0
   fi
@@ -282,9 +289,9 @@ ensure_sudoers_rule() {
   # Fallback: /etc/sudoers direct edit (least preferred)
   printf '%s\n' "No /etc/sudoers.d directory; falling back to appending to /etc/sudoers."
   SUDOERS="/etc/sudoers"
-  cp -p "$SUDOERS" "$SUDOERS.bak.$(date +%s)" >/dev/null 2>&1 || true
+  cp -p "$SUDOERS" "$SUDOERS.bak.$(date +%s)" >/dev/null 2>&1 || die_stub "Could not backup old sudoers" ;
   printf '%s\n' "$RULE" >> "$SUDOERS"
-  command -v visudo >/dev/null 2>&1 && visudo -c >/dev/null 2>&1 || true
+  { command -v visudo >/dev/null 2>&1 && visudo -c >/dev/null 2>&1 || mv "$SUDOERS.bak.$(date +%s)" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;} || die_stub "sudoers validation failed" ;
 }
 
 main() {
@@ -299,3 +306,10 @@ main() {
 }
 
 main "$@"
+
+#cleanup
+unset MODE
+unset die_stub 2>/dev/null || true
+unset ensure_sudoers_rule 2>/dev/null || true
+unset detect_admin_group 2>/dev/null || true
+unset install_sudo 2>/dev/null || true
