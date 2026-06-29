@@ -93,10 +93,11 @@ ANYVM_CPU="${INPUT_CPU:-1}"
 ANYVM_CPU_ARCH="${INPUT_CPU_ARCH:-}"  # optional VM specific CPU model
 ANYVM_VERSION="${ANYVM_VERSION:-2.1.8}"    # pin this per OS builder
 ANYVM_SHA="7d20a921892ad49d4338dc4d9b641b496658cb78"  # v0.4.3
-ANYVM_CACHE_DIR="$(expand_tilde "${INPUT_CACHE_DIR:-${RUNNER_TOOL_CACHE:-/opt}/anyvm-cache}")"
+ANYVM_CACHE_BASE="$(expand_tilde "${INPUT_CACHE_DIR:-${RUNNER_TOOL_CACHE:-/opt}/anyvm-cache}")"
+ANYVM_CACHE_DIR="$ANYVM_CACHE_BASE/anyvm-py/images"
 INPUT_DATA_DIR="${INPUT_DATA_DIR:-data}"
 INPUT_DATA_DIR="$(expand_tilde "$INPUT_DATA_DIR")"
-DATA_DIR="${ANYVM_CACHE_DIR}/${INPUT_DATA_DIR}"
+DATA_DIR="${ANYVM_CACHE_BASE}/${INPUT_DATA_DIR}"
 VM_USER_CREATE="${INPUT_CREATE_USER:-true}"    # create non-root user by default
 HOST_USER="${INPUT_HOST_USER:-${RUNNER_USER:-$(whoami)}}"
 GITHUB_TIMEOUT="${INPUT_TIMEOUT:-${JOB_TIMEOUT:-360}}"  # minutes; JOB_TIMEOUT can be set by workflow
@@ -128,7 +129,7 @@ SAFE_GITHUB_LIST='GITHUB_ACTION GITHUB_ACTIONS GITHUB_WORKFLOW GITHUB_RUN_ATTEMP
 export SAFE_GITHUB_LIST
 
 # Path to anyvm.py command (path not-resolved -- may need to create path for cache)
-ANYVM_PY_PATH="$ANYVM_CACHE_DIR/anyvm.py"
+ANYVM_PY_PATH="$ANYVM_CACHE_BASE/anyvm.py"
 # TODO: leverage GITHUB_SERVER here (for GHES)
 ANYVM_URL="https://raw.githubusercontent.com/anyvm-org/anyvm/${ANYVM_SHA}/anyvm.py"
 ANYVM_RELEASE_TAG="v${ANYVM_VERSION}"
@@ -321,7 +322,7 @@ done
 
 debug_log "Ensure cache dirs exists" &
 
-for SOME_CACHE_DIR in "$ANYVM_CACHE_DIR" "$DATA_DIR" "$DATA_DIR/images" "${VMSH_DIR}" "${HOME:-.}/.ssh"; do
+for SOME_CACHE_DIR in "$ANYVM_CACHE_BASE" "$DATA_DIR" "${ANYVM_CACHE_DIR:-} "${VMSH_DIR}" "${HOME:-.}/.ssh"; do
 	mkdir -p "$SOME_CACHE_DIR" ;
 	debug_log "=> Checking for \"$SOME_CACHE_DIR\"" ;
 	if [ -d "$SOME_CACHE_DIR" ]; then
@@ -349,13 +350,12 @@ debug_log "=> qemu installed" &
 debug_log "Ensure we have anyvm.py..."
 # Download anyvm.py (kept)
 
-if [ -n "${ANYVM_CACHE_DIR:-}" ] && [ ! -f "${ANYVM_PY_PATH:-}" ]; then
+if [ -n "${ANYVM_CACHE_BASE:-}" ] && [ ! -f "${ANYVM_PY_PATH:-}" ]; then
 	debug_log "=> anyvm.py not found in cache"
 	ANYVM_PY_IN_CACHE=0;
-elif [ -n "${ANYVM_CACHE_DIR:-}" ]; then
+elif [ -n "${ANYVM_CACHE_BASE:-}" ]; then
 	debug_log "=> anyvm.py found (cached)"
 	ANYVM_PY_IN_CACHE=1;
-	# TODO: leverage cache here
 else
 	debug_log "=> but cache is disabled or not available"
 	ANYVM_PY_IN_CACHE=0;
@@ -396,7 +396,7 @@ debug_log "Requesting target ${ANYVM_NAME:-}"
 # 2c. (work) Try image extensions (preferred order)
 IMAGE_PATH=""
 for ext in "qcow2.zst" "qemu"; do
-	cand="$DATA_DIR/images/${ANYVM_NAME}.${ext}"
+	cand="${ANYVM_CACHE_DIR:-}/${ANYVM_NAME}.${ext}"
 	url="${BASE_URL}/${ANYVM_NAME}.${ext}"
 	debug_log "Fetching target from ${url}"
 	if download_file "$url" "$cand"; then
@@ -407,7 +407,7 @@ for ext in "qcow2.zst" "qemu"; do
 		fi ;
 	fi ;
 done ;
-[ -n "$IMAGE_PATH" ] || die "no image found for ${ANYVM_NAME} (.qcow2.zst nor .qemu) in ${DATA_DIR}/images"
+[ -n "$IMAGE_PATH" ] || die "no image found for ${ANYVM_NAME} (.qcow2.zst nor .qemu) in ${ANYVM_CACHE_DIR:-}"
 
 # 2d. Fetch (Speculatively "needed") baked-in key-pair for guest VM
 BAKED_PUB="$DATA_DIR/${ANYVM_NAME}.pub"
@@ -448,6 +448,10 @@ debug_log "=> Selecting VM OS (--os \"${ANYVM_OSNAME}\")" &
 debug_log "=> Selecting VM RAM (--mem \"${ANYVM_MEM}\")" &
 debug_log "=> Selecting VM Builder (--builder \"${ANYVM_VERSION}\")" &
 START_ARGS=(--os "${ANYVM_OSNAME}" --mem "$ANYVM_MEM" --detach --builder "$ANYVM_VERSION")
+if [ -d "${ANYVM_CACHE_DIR:-}" ]; then
+	debug_log "=> Selecting cache dir (--cache-dir \"anyvm-py\")"
+	START_ARGS+=(--cache-dir "${ANYVM_CACHE_BASE:-}/anyvm-py")
+fi
 if [ -d "${DATA_DIR:-}" ]; then
 	debug_log "=> Selecting data dir (--data-dir \"$INPUT_DATA_DIR\")"
 	START_ARGS+=(--data-dir "$DATA_DIR")

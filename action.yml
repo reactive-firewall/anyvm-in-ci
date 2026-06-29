@@ -197,15 +197,15 @@ runs:
         case "$cpus" in ''|*[!0-9]*) cpus=1 ;; esac
         echo "cpus=$cpus" >> "$GITHUB_OUTPUT"
     - name: Cache
+      if: ${{ inputs.disable-cache != true }}
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: |
           ${{ inputs.cache-dir }}/**/anyvm.py
-          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/images/*.qemu
-          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/images/**/*.qemu
-          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/images/*.qcow2.zst
-          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/images/**/*.qcow2
-          ${{ inputs.cache-dir }}/${{ inputs.data-dir || 'data' }}/**/*.qcow2
+          ${{ inputs.cache-dir }}/anyvm-py/images/*.qemu
+          ${{ inputs.cache-dir }}/anyvm-py/images/**/*.qemu
+          ${{ inputs.cache-dir }}/anyvm-py/images/*.qcow2.zst
+          ${{ inputs.cache-dir }}/anyvm-py/images/**/*.qcow2
           ${{ runner.tool_cache }}/anyvm-in-ci/bin/${{ inputs.custom-shell-name || 'vmsh' }}
         key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
         restore-keys: |
@@ -277,13 +277,27 @@ runs:
           printf "::error title='INVALID'::%s\n" "Missing anyvm-in-ci utilities." ;
           exit 1
         fi ;
-    - name: Save Cache
+    - name: Save Tool Cache
+      if: ${{ inputs.disable-cache != true }}
+      id: anyvm_cache_1
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: |
           ${{ inputs.cache-dir }}/**/anyvm.py
           ${{ runner.tool_cache }}/anyvm-in-ci/bin/**
         key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
+        lookup-only: true
+    - name: Save QEMU Cache
+      id: anyvm_cache_2
+      if: ${{ inputs.disable-cache != true }}
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ${{ inputs.cache-dir }}/anyvm-py/images/*.qemu
+          ${{ inputs.cache-dir }}/anyvm-py/images/**/*.qemu
+          ${{ inputs.cache-dir }}/anyvm-py/images/*.qcow2.zst
+          ${{ inputs.cache-dir }}/anyvm-py/images/**/*.qcow2
+        key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-QEMU-data
         lookup-only: true
     - name: "Cleanup any remaining VMs"
       id: anyvm-post-cleanup
