@@ -117,6 +117,7 @@ EPHEM_KEY_BITS=3072
 # TODO: carefully resolve relative path to a canonical path
 ANYVM_ROTATE_RKEYS_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/rotate_root_keys.sh" ;
 ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/bridge-hosts-stub.sh" ;
+ANYVM_VM_DO_SUDO_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/vm-do-sudo.sh" ;
 ANYVM_CREATE_CI_USER_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/create_user.sh" ;
 ANYVM_WRAP_USER_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/ssh-wrapper-user.sh" ;
 ANYVM_WRAP_ROOT_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/ssh-wrapper-root.sh" ;

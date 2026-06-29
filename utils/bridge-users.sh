@@ -63,32 +63,29 @@
 #    even if the above stated remedy fails of its essential purpose.
 ################################################################################
 
+test -x "$(command -v awk)" || exit 126 ;
+test -x "$(command -v grep)" || exit 126 ;
 test -x "$(command -v scp)" || exit 126 ;
+test -x "$(command -v sed)" || exit 126 ;
 test -x "$(command -v ssh)" || exit 126 ;
 test -x "$(command -v ssh-keygen)" || exit 126 ;
 test -x "$(command -v openssl)" || exit 126 ;
+# just assume these are provided and skip checks
+#test -x "$(command -v cd)" || exit 126 ;
+#test -x "$(command -v cp)" || exit 126 ;
+#test -x "$(command -v chmod)" || exit 126 ;
+#test -x "$(command -v mv)" || exit 126 ;
+
 set -eu
 
-# create_user.sh
+# create_user.sh - provisions a non-root user for use in CI pipelines loosely based on host's user
 
-# CAUTION: WIP!
-
-# 6e. Merge host /etc/hosts into guest's /etc/hosts (best-effort, safer merge)
-# - preserves guest's essential localhost and virtualization entries
-# - adds host entries that don't conflict with guest localhost/virtualization
-# - preserves "blackhole" localhost-style entries from host (e.g. somehost -> 127.0.0.1 or ::1)
-#
 # Assumptions (reasonable defaults):
 # - VM ssh reachable as root@"$VM_SSH_HOST" on port $VM_SSH_PORT using key $EPHEM_KEY
 # - scp/ssh available locally and on guest
 #
 # Behavior summary:
-# 1) Copy host /etc/hosts to guest temporary file
-# 2) On guest, create a sanitized guest /etc/hosts snapshot of existing content,
-#    keeping lines that define canonical localhost and typical virtualization entries.
-# 3) Append host entries that do not conflict with the preserved guest localhost/virtualization names.
-# 4) Preserve host "blackhole" mappings (to 127.0.0.* or ::1) unless they would overwrite a preserved
-#    guest localhost/virtualization name.
+# ...TODO
 #
 # Note: Best-effort — if any command fails we continue (nonfatal), but critical failures are reported.
 
@@ -104,9 +101,13 @@ VM_CI_USER="${GUEST_USER:-runner}"
 USER_KEY="${USER_KEY:-}"
 EPHEM_KEY_TYPE="${EPHEM_KEY_TYPE:-rsa}"
 EPHEM_KEY_BITS="${EPHEM_KEY_BITS:-3072}"
+_VERBOSE_FLAG=$([ "${DEBUG:-0}" -eq 1 ] && printf '%s' "-v" || printf "" ;);
 
 # helper: conditional diagnostic with message
 debug_user_log(){ if [ "${DEBUG:-0}" -eq 1 ]; then printf '::debug:: %s\n' "$*"; fi; }
+
+# helper: fail with message
+user_died(){ printf "::error title='ERROR':: %s\n" "$*" >&2; exit 1; }
 
 # Portable sh (e.g., FreeBSD /bin/sh) helper:
 # Masks the exact strings passed as arguments, using GitHub Actions logging command.
@@ -165,19 +166,28 @@ build_user_sendenv_opts() {
 	printf '%s' "$sendenv_opts"
 }
 
-# TODO: verify ANYVM_CREATE_CI_USER_FILE is a file that exists
+# Verify ANYVM_CREATE_CI_USER_FILE is a file that exists
 if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
-	debug_user_log "Preparing script to clone user on to Guest VM" ;
-	CREATE_CI_USER_SCRIPT_PATH="$BRIDGE_DATA_DIR/create_user_$$.sh"
-	# TODO: add -v only in debug mode
-	cp -f "${ANYVM_CREATE_CI_USER_FILE}" "$CREATE_CI_USER_SCRIPT_PATH"
-	debug_user_log "=> Staged" & debug_user_log "..=> Setting Permissions on staged script" ;
-	chmod +x "$CREATE_CI_USER_SCRIPT_PATH"
+	debug_user_log "Preparing scripts to clone user on to Guest VM" ;
 
+	# See also: https://github.com/reactive-firewall/anyvm-in-ci/issues/24
+	# A. Prepare stub for installing sudo pkg in an OS agnostic way.
+	VM_DO_SUDO_SCRIPT_PATH="$BRIDGE_DATA_DIR/ensure_sudo_$$.sh"
+	cp ${_VERBOSE_FLAG:-} -f "${ANYVM_VM_DO_SUDO_FILE}" "$VM_DO_SUDO_SCRIPT_PATH"
+	debug_user_log "=> Staged ensure_sudo" &
+	# B. Prepare stub for creating user an OS agnostic way.
+	CREATE_CI_USER_SCRIPT_PATH="$BRIDGE_DATA_DIR/create_user_$$.sh"
+	cp ${_VERBOSE_FLAG:-} -f "${ANYVM_CREATE_CI_USER_FILE}" "$CREATE_CI_USER_SCRIPT_PATH"
+	debug_user_log "=> Staged create_user" & debug_user_log "..=> Setting Permissions on staged scripts" ;
+	# Chmod VM_DO_SUDO_SCRIPT_PATH
+	chmod ${_VERBOSE_FLAG:-} +x "$VM_DO_SUDO_SCRIPT_PATH"
+	debug_user_log "Ready to transfer \"${VM_DO_SUDO_SCRIPT_PATH}\" to Guest VM"
+	# Chmod CREATE_CI_USER_SCRIPT_PATH
+	chmod ${_VERBOSE_FLAG:-} +x "$CREATE_CI_USER_SCRIPT_PATH"
 	debug_user_log "Ready to transfer \"${CREATE_CI_USER_SCRIPT_PATH}\" to Guest VM" &
 
 	debug_user_log "Generating VM User keys" ;
-	ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -V -1m:+6h -C "${GUEST_USER:-runner}-$()" >/dev/null || printf "::error title='FAILED'::%s\n" "Failed to generate ephemeral user keys"
+	ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -V -1m:+6h -C "${GUEST_USER:-runner}-vm-ephemeral-$(date -u +%s)" >/dev/null || user_died "Failed to generate ephemeral user keys"
 	debug_user_log "Checking for new ephemeral user key pair"
 
 	if [ ! -f "$USER_KEY" ] || [ ! -f "$USER_KEY.pub" ]; then
@@ -188,33 +198,41 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 		# TODO: check that found keys are indeed a pair
 		ssh-keygen -lf "$USER_KEY.pub"
 	fi
+	# now mask pub key before sending it to guest VM
+	if [ -f "$USER_KEY.pub" ]; then
+		USER_PUB_CONTENT="$(cat ${USER_KEY}.pub)"
+		mask_user_inputs "$USER_PUB_CONTENT";
+	fi;
 
-	USER_PUB_CONTENT="$(cat ${USER_KEY}.pub)"
-	mask_user_inputs "$USER_PUB_CONTENT";
-
-	# 4d. copy rotation script and run it using baked key (best-effort)
+	# 4d. copy rotation script and run it using ephem key (best-effort)
 	if [ -f "$USER_KEY" ]; then
 		debug_user_log "=> Waiting for transfer" ;
 		USER_PUB_TFILE=$(printf '%s\n' "$RANDOM$RANDOM$RANDOM$RANDOM" | openssl dgst -sha256 - | cut -d\= -f 2-2 | tr -d ' ' | head -n1)
 		mask_user_inputs "${USER_PUB_TFILE}";
 		debug_user_log "=> Ready to transfer user public key data to Guest VM" ;
 
-		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || printf '::error:: %s\n' "failed to scp create_user script" ;
-		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || printf '::error:: %s\n' "failed to scp create_user data" ;
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$VM_DO_SUDO_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/ensure_sudo.sh || user_died "failed to scp ensure_sudo script" ;
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || user_died "failed to scp create_user script" ;
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || user_died "failed to scp create_user data" ;
 		debug_user_log "..=> Transferred" & debug_user_log "..=> Waiting for user sync" &
 
-		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=1 sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}" || printf '::error:: %s\n' "warning: create_user execution failed with $?" ;
+		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=${DEBUG:-1} sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}" || user_died "warning: create_user execution failed with $?" ;
+		debug_user_log "..=> Created"
+		# See also: https://github.com/reactive-firewall/anyvm-in-ci/issues/24
+		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=${DEBUG:-1} sh /tmp/ensure_sudo.sh ${VM_CI_USER} 2" || user_died "warning: ensure_sudo execution failed with $?" ;
 		debug_user_log "..=> Synced"
 		unset USER_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
 	else
-	  printf '::warning:: %s\n' "/etc/hosts not found locally; nothing to do." >&2
+	  # only soft-fail
+	  printf '::warning:: %s\n' "Ephemeral user key not found; nothing to do." >&2
 	  debug_user_log "Nothing transferred"
 	fi
 
+	# See also: https://github.com/reactive-firewall/anyvm-in-ci/issues/24
 	# debug_user_log "=> Attempt to drop root access" &
 	# SSH_EPHEMERAL_OPTS="";
 	# unset SSH_EPHEMERAL_OPTS;
-	# TODO: deal with root keys more securely
+	# TODO: deal with root login more securely
 
 	debug_user_log "=> Will now try ephemeral user key pair"
 	SSH_USER_EPHEMERAL_OPTS="";
@@ -223,7 +241,7 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 	SSH_USER_EPHEMERAL_OPTS="$SSH_USER_EPHEMERAL_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -i $USER_KEY -o ConnectTimeout=5"
 	u_ok=1
 	for _step in 1 2 3; do
-		if ssh $SSH_USER_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT -o BatchMode=yes ${VM_CI_USER}@"$BRIDGE_VM" "echo OK" >/dev/null 2>&1; then u_ok=0; break; fi
+		if ssh $SSH_USER_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT -o BatchMode=yes "${VM_CI_USER}"@"$BRIDGE_VM" "echo OK" >/dev/null 2>&1; then u_ok=0; break; fi
 		sleep 1
 	done
 	if [ $u_ok -ne 0 ]; then
@@ -234,14 +252,18 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 	fi
 
 	# best effort cleanup
-	rm -f "$CREATE_CI_USER_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
+	rm ${_VERBOSE_FLAG:-} -f "$VM_DO_SUDO_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
+	rm ${_VERBOSE_FLAG:-} -f "$CREATE_CI_USER_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
+	unset SSH_USER_EPHEMERAL_OPTS
 fi;
 unset BRIDGE_VM
 unset BRIDGE_VM_PORT
 unset BRIDGE_DATA_DIR
 unset CREATE_CI_USER_SCRIPT_PATH
+unset VM_DO_SUDO_SCRIPT_PATH
 unset VM_CI_USER
-unset SSH_USER_EPHEMERAL_OPTS
+unset _VERBOSE_FLAG
+unset user_died || true
 unset build_user_sendenv_opts || true
 unset debug_user_log || true
 unset mask_user_inputs || true
