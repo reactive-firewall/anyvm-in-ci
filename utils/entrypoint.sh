@@ -323,7 +323,7 @@ done
 
 debug_log "Ensure cache dirs exists" &
 
-for SOME_CACHE_DIR in "$ANYVM_CACHE_BASE" "$DATA_DIR" "${ANYVM_CACHE_DIR:-} "${VMSH_DIR}" "${HOME:-.}/.ssh"; do
+for SOME_CACHE_DIR in "$ANYVM_CACHE_BASE" "$DATA_DIR" "${ANYVM_CACHE_DIR:-}" "${VMSH_DIR}" "${HOME:-.}/.ssh"; do
 	mkdir -p "$SOME_CACHE_DIR" ;
 	debug_log "=> Checking for \"$SOME_CACHE_DIR\"" ;
 	if [ -d "$SOME_CACHE_DIR" ]; then
