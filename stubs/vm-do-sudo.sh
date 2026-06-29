@@ -277,7 +277,7 @@ ensure_sudoers_rule() {
     chmod 0440 "$FILE" >/dev/null 2>&1 || true ;
     # early cleanup
     { chmod 600 "$tmp" >/dev/null 2>&1 || die_stub "TMP could not be un-chmoded (for cleanup)" ;
-      rm -f "$tmp" >/dev/null 2>&1 || die_stub "TMP could not cleaned up" ;} || true ; # best-effort
+      rm -f "$tmp" >/dev/null 2>&1 || die_stub "TMP could not cleaned up" ;}
 
     # Validate sudoers if visudo exists
     if command -v visudo >/dev/null 2>&1; then
@@ -287,11 +287,18 @@ ensure_sudoers_rule() {
   fi
 
   # Fallback: /etc/sudoers direct edit (least preferred)
-  printf '%s\n' "No /etc/sudoers.d directory; falling back to appending to /etc/sudoers."
+  printf '::warning::%s\n' "No /etc/sudoers.d directory; falling back to appending to /etc/sudoers."
   SUDOERS="/etc/sudoers"
-  cp -p "$SUDOERS" "$SUDOERS.bak.$(date +%s)" >/dev/null 2>&1 || die_stub "Could not backup old sudoers" ;
+  SUDOERS_BACKUP_PATH="$SUDOERS.bak.$(date +%s)"
+  cp -p "$SUDOERS" "${SUDOERS_BACKUP_PATH}" >/dev/null 2>&1 || die_stub "Could not backup old sudoers" ;
   printf '%s\n' "$RULE" >> "$SUDOERS"
-  { command -v visudo >/dev/null 2>&1 && visudo -c >/dev/null 2>&1 || mv "$SUDOERS.bak.$(date +%s)" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;} || die_stub "sudoers validation failed" ;
+  # Validate sudoers if visudo exists
+  if command -v visudo >/dev/null 2>&1; then
+    if ! visudo -c >/dev/null 2>&1; then
+      mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
+      die_stub "sudoers validation failed" ;  # still fail on successful restore
+    fi
+  fi
 }
 
 main() {
@@ -300,9 +307,6 @@ main() {
   ensure_sudoers_rule
 
   printf '%s\n' "Done."
-  printf '%s\n' "Test (as the target user):"
-  printf '%s\n' "  sudo -n whoami  # should work without password only for whitelisted commands in mode 2"
-  printf '%s\n' "  sudo whoami     # should prompt for password in mode 0/2 (or succeed depending on image policy)"
 }
 
 main "$@"

@@ -187,7 +187,7 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 	debug_user_log "Ready to transfer \"${CREATE_CI_USER_SCRIPT_PATH}\" to Guest VM" &
 
 	debug_user_log "Generating VM User keys" ;
-	ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -V -1m:+6h -C "${GUEST_USER:-runner}-vm-ephemeral-$(date -u +%s)" >/dev/null || user_died "::error title='FAILED'::%s\n" "Failed to generate ephemeral user keys"
+	ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$USER_KEY" -N "" -V -1m:+6h -C "${GUEST_USER:-runner}-vm-ephemeral-$(date -u +%s)" >/dev/null || user_died "Failed to generate ephemeral user keys"
 	debug_user_log "Checking for new ephemeral user key pair"
 
 	if [ ! -f "$USER_KEY" ] || [ ! -f "$USER_KEY.pub" ]; then
@@ -211,15 +211,15 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 		mask_user_inputs "${USER_PUB_TFILE}";
 		debug_user_log "=> Ready to transfer user public key data to Guest VM" ;
 
-		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$VM_DO_SUDO_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/ensure_sudo.sh || user_died '::warning:: %s\n' "failed to scp ensure_sudo script" ;
-		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || user_died '::error:: %s\n' "failed to scp create_user script" ;
-		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || user_died '::error:: %s\n' "failed to scp create_user data" ;
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$VM_DO_SUDO_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/ensure_sudo.sh || user_died "failed to scp ensure_sudo script" ;
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || user_died "failed to scp create_user script" ;
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || user_died "failed to scp create_user data" ;
 		debug_user_log "..=> Transferred" & debug_user_log "..=> Waiting for user sync" &
 
-		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=${DEBUG:-1} sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}" || user_died '::error:: %s\n' "warning: create_user execution failed with $?" ;
+		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=${DEBUG:-1} sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}" || user_died "warning: create_user execution failed with $?" ;
 		debug_user_log "..=> Created"
 		# See also: https://github.com/reactive-firewall/anyvm-in-ci/issues/24
-		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=${DEBUG:-1} sh /tmp/ensure_sudo.sh ${VM_CI_USER} 2" || user_died '::error:: %s\n' "warning: ensure_sudo execution failed with $?" ;
+		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=${DEBUG:-1} sh /tmp/ensure_sudo.sh ${VM_CI_USER} 2" || user_died "warning: ensure_sudo execution failed with $?" ;
 		debug_user_log "..=> Synced"
 		unset USER_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
 	else
