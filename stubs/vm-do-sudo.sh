@@ -291,7 +291,10 @@ ensure_sudoers_rule() {
   SUDOERS="/etc/sudoers"
   SUDOERS_BACKUP_PATH="$SUDOERS.bak.$(date +%s)"
   cp -p "$SUDOERS" "${SUDOERS_BACKUP_PATH}" >/dev/null 2>&1 || die_stub "Could not backup old sudoers" ;
-  printf '%s\n' "$RULE" >> "$SUDOERS"
+  if ! printf '%s\n' "$RULE" >> "$SUDOERS"; then
+    mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
+    die_stub "Could not update sudoers" ;
+  fi
   # Validate sudoers if visudo exists
   if command -v visudo >/dev/null 2>&1; then
     if ! visudo -c >/dev/null 2>&1; then
