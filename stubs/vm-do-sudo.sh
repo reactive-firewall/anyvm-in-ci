@@ -140,19 +140,18 @@ install_sudo() {
   return 1
 }
 
+detect_admin_group() {
+  if command -v getent >/dev/null 2>&1 && getent group sudo >/dev/null 2>&1; then
+    printf '%s\n' "sudo";
+  elif [ -f /etc/group ] && grep -q '^wheel:' /etc/group 2>/dev/null; then
+    printf '%s\n' "wheel";
+  else
+    printf '%s\n' "wheel";
+  fi
+}
+
 add_user_to_admin_group() {
-  GROUP=""
-  # Linux
-  if command -v getent >/dev/null 2>&1; then
-    getent group sudo >/dev/null 2>&1 && GROUP="sudo" || true
-  fi
-
-  # BSD
-  if [ -z "$GROUP" ] && [ -f /etc/group ]; then
-    grep -q '^wheel:' /etc/group 2>/dev/null && GROUP="wheel" || true
-  fi
-
-  [ -n "$GROUP" ] || GROUP="wheel"
+  GROUP=$(detect_admin_group)
 
   printf '%s\n' "Ensuring user '$USER_NAME' is in group '$GROUP'"
 
@@ -177,9 +176,7 @@ ensure_sudoers_rule() {
   FILE="$SUDOERS_D/99-$USER_NAME-admin"
 
   # Determine admin group name (wheel/sudo)
-  GROUP="wheel"
-  if [ -f /etc/group ] && grep -q '^sudo:' /etc/group 2>/dev/null; then GROUP="sudo"; fi
-  if [ -f /etc/group ] && grep -q '^wheel:' /etc/group 2>/dev/null; then GROUP="wheel"; fi
+  GROUP=$(detect_admin_group)
 
   # NOPASSWD policy
   if [ "$MODE" = "1" ]; then
@@ -199,19 +196,23 @@ ensure_sudoers_rule() {
     WHITELIST_NPM_INSTALL=""
     WHITELIST_PIP_INSTALL=""
 
+    WHITELIST_PKG_UPDATE=""
+    WHITELIST_APT_UPDATE=""
+
     # Only include patterns that map to binaries we actually have.
     # (This keeps sudoers clean on images that lack certain package managers.)
     if [ -x /usr/sbin/pkg ] || command -v pkg >/dev/null 2>&1; then
       # FreeBSD-ish pkg(8): usually /usr/sbin/pkg
       PKG_BIN="$(command -v pkg 2>/dev/null || echo /usr/sbin/pkg)"
       WHITELIST_PKG_INSTALL="$PKG_BIN install *"
+      WHITELIST_PKG_UPDATE="$PKG_BIN update *"
     fi
 
     if command -v apt-get >/dev/null 2>&1; then
       APT_GET_BIN="$(command -v apt-get)"
       WHITELIST_APT_INSTALL="$APT_GET_BIN install *"
       # Optional: you can add update/upgrade as well:
-      # WHITELIST_APT_INSTALL="$WHITELIST_APT_INSTALL, $APT_GET_BIN update, $APT_GET_BIN upgrade"
+      WHITELIST_APT_UPDATE="$APT_GET_BIN update, $APT_GET_BIN upgrade"
     fi
 
     if command -v apk >/dev/null 2>&1; then
@@ -232,7 +233,9 @@ ensure_sudoers_rule() {
     # Build Cmnd_Alias lines. If nothing matches, we fallback to refusing NOPASSWD.
     CMD_LIST=""
     if [ -n "$WHITELIST_PKG_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_PKG_INSTALL"; fi
+    if [ -n "$WHITELIST_PKG_UPDATE" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_PKG_UPDATE"; fi
     if [ -n "$WHITELIST_APT_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_APT_INSTALL"; fi
+    if [ -n "$WHITELIST_PKG_UPDATE" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_PKG_UPDATE"; fi
     if [ -n "$WHITELIST_APK_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_APK_INSTALL"; fi
     if [ -n "$WHITELIST_NPM_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_NPM_INSTALL"; fi
     if [ -n "$WHITELIST_PIP_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_PIP_INSTALL"; fi
