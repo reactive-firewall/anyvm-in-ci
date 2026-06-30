@@ -290,15 +290,23 @@ ensure_sudoers_rule() {
   printf '::warning::%s\n' "No /etc/sudoers.d directory; falling back to appending to /etc/sudoers."
   SUDOERS="/etc/sudoers"
   SUDOERS_BACKUP_PATH="$SUDOERS.bak.$(date +%s)"
-  cp -fp "$SUDOERS" "${SUDOERS_BACKUP_PATH}" >/dev/null 2>&1 || die_stub "Could not backup old sudoers" ;
-  if ! printf '%s\n' "$RULE" >> "$SUDOERS"; then
-    mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
-    die_stub "Could not update sudoers" ;
+  if [ -f "$SUDOERS" ]; then
+    cp -fp "$SUDOERS" "${SUDOERS_BACKUP_PATH}" >/dev/null 2>&1 || die_stub "Could not backup old sudoers" ;
+    if ! printf '%s\n' "$RULE" >> "$SUDOERS"; then
+      mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
+      die_stub "Could not update sudoers" ;
+    fi
+  else
+    if ! printf '%s\n' "$RULE" > "$SUDOERS"; then
+      die_stub "Could not update sudoers" ;
+    fi
   fi
   # Validate sudoers if visudo exists
   if command -v visudo >/dev/null 2>&1; then
     if ! visudo -c >/dev/null 2>&1; then
-      mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
+      if [ -f "$SUDOERS_BACKUP_PATH" ]; then
+        mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
+      fi
       die_stub "sudoers validation failed" ;  # still fail on successful restore
     fi
   fi
@@ -309,7 +317,7 @@ main() {
   add_user_to_admin_group
   ensure_sudoers_rule
 
-  printf '%s\n' "Done."
+  printf '%s\n' "sudo ready"
 }
 
 main "$@"
