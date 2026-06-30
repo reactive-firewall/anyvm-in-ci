@@ -290,7 +290,7 @@ ensure_sudoers_rule() {
   printf '::warning::%s\n' "No /etc/sudoers.d directory; falling back to appending to /etc/sudoers."
   SUDOERS="/etc/sudoers"
   SUDOERS_BACKUP_PATH="$SUDOERS.bak.$(date +%s)"
-  cp -p "$SUDOERS" "${SUDOERS_BACKUP_PATH}" >/dev/null 2>&1 || die_stub "Could not backup old sudoers" ;
+  cp -fp "$SUDOERS" "${SUDOERS_BACKUP_PATH}" >/dev/null 2>&1 || die_stub "Could not backup old sudoers" ;
   if ! printf '%s\n' "$RULE" >> "$SUDOERS"; then
     mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
     die_stub "Could not update sudoers" ;
