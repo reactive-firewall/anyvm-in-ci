@@ -242,6 +242,8 @@ detect_admin_group() {
 # Ensure FreeBSD wheel handling + group membership (default group + supplementary)
 if command -v pw >/dev/null 2>&1; then
   pw usermod "$USERNAME" -g "$USERGROUP" -G $(detect_admin_group),"$USERNAME" || true
+  # critical to allow sudo usage on *bsd systems
+  pw groupmod $(detect_admin_group) -m "$USERNAME" ;
 fi
 
 if command -v id >/dev/null 2>&1; then
