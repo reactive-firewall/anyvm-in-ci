@@ -229,9 +229,23 @@ for _purge_rfile in hosts.equiv shosts.equiv ; do
   fi
 done
 
+detect_admin_group() {
+  if command -v getent >/dev/null 2>&1 && getent group sudo >/dev/null 2>&1; then
+    printf '%s\n' "sudo";
+  elif [ -f /etc/group ] && grep -q '^wheel:' /etc/group 2>/dev/null; then
+    printf '%s\n' "wheel";
+  else
+    printf '%s\n' "wheel";
+  fi
+}
+
 # Ensure FreeBSD wheel handling + group membership (default group + supplementary)
 if command -v pw >/dev/null 2>&1; then
-  pw usermod "$USERNAME" -g "$USERGROUP" -G wheel,"$USERNAME" || true
+  pw usermod "$USERNAME" -g "$USERGROUP" -G $(detect_admin_group),"$USERNAME" || true
+fi
+
+if command -v id >/dev/null 2>&1; then
+  id "$USERNAME" || true
 fi
 
 # rest of the cleanup

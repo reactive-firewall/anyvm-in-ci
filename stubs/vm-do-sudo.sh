@@ -249,17 +249,17 @@ ensure_sudoers_rule() {
     if [ -z "$CMD_LIST" ]; then
       # No package manager found => no whitelist (but still allow admin group with password).
       # This avoids writing an empty Cmnd_Alias that could confuse behavior.
-      RULE="%$GROUP ALL=(ALL) ALL"
+      RULE="%$GROUP ALL=(ALL:ALL) ALL"
     else
       # Allow NOPASSWD only for whitelisted commands; keep everything else password-gated.
       # Also allow the group to run "sudo -n true" etc would not be needed; keep narrow.
-      RULE="%$GROUP ALL=(ALL) ALL
-%$GROUP ALL=(ALL) NOPASSWD: $CMD_LIST"
+      RULE="%$GROUP ALL=(ALL:ALL) ALL
+%$GROUP ALL=(ALL:ALL) NOPASSWD: $CMD_LIST"
       # Some sudo versions dislike multi-line in a single variable for sudoers.d; write as literal below.
     fi
   else
     # MODE=0: password for admin group (no NOPASSWD)
-    RULE="%$GROUP ALL=(ALL) ALL"
+    RULE="%$GROUP ALL=(ALL:ALL) ALL"
     printf "::warning title='SUDO-INTERACTIVE'::%s\n" "Interactive mode for sudo is intended for testing interactively, and can cause hangs when run in headless CI pipelines.";
   fi
 
