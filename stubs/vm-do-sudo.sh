@@ -176,6 +176,10 @@ add_user_to_admin_group() {
 ensure_sudoers_rule() {
   # Prefer sudoers.d include
   SUDOERS_D="/etc/sudoers.d"
+  if [ -f "/usr/local/etc/sudoers" ]; then
+    # should use /usr/local/etc/* paths in this case (e.g., freebsd 15+)
+    SUDOERS_D="/usr/local/etc/sudoers.d"
+  fi
   FILE="$SUDOERS_D/99-$USER_NAME-admin"
 
   # Determine admin group name (wheel/sudo)
@@ -273,11 +277,11 @@ ensure_sudoers_rule() {
     # shellcheck disable=SC2059
     printf "%s\n" "$RULE" > "$tmp"
     chmod 0440 "$tmp" >/dev/null 2>&1 || die_stub "sudoers could not be chmoded" ;
-    mv "$tmp" "$FILE"
+    mv "$tmp" "$FILE"  # might cause non-fatal warnings with early cleanup
     chmod 0440 "$FILE" >/dev/null 2>&1 || true ;
     # early cleanup
-    { chmod 600 "$tmp" >/dev/null 2>&1 || die_stub "TMP could not be un-chmoded (for cleanup)" ;
-      rm -f "$tmp" >/dev/null 2>&1 || die_stub "TMP could not cleaned up" ;}
+    { chmod 600 "$tmp" >/dev/null 2>&1 || true ;
+      rm -f "$tmp" >/dev/null 2>&1 || true ;} 2>&1 # might need to ignore these, they are non-fatal
 
     # Validate sudoers if visudo exists
     if command -v visudo >/dev/null 2>&1; then
@@ -287,8 +291,12 @@ ensure_sudoers_rule() {
   fi
 
   # Fallback: /etc/sudoers direct edit (least preferred)
-  printf '::warning::%s\n' "No /etc/sudoers.d directory; falling back to appending to /etc/sudoers."
+  printf '::warning::%s\n' "No etc/sudoers.d directory; falling back to appending to /etc/sudoers."
   SUDOERS="/etc/sudoers"
+  if [ -f "/usr/local/etc/sudoers" ]; then
+    # should use /usr/local/etc/* paths in this case (e.g., freebsd 15+)
+    SUDOERS="/usr/local/etc/sudoers"
+  fi
   SUDOERS_BACKUP_PATH="$SUDOERS.bak.$(date +%s)"
   SUDOERS_FAILSAFE="/root/sudoers.failsafe"
   if [ -f "$SUDOERS" ]; then
