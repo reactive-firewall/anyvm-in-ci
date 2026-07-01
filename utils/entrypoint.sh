@@ -118,6 +118,7 @@ EPHEM_KEY_BITS=3072
 ANYVM_ROTATE_RKEYS_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/rotate_root_keys.sh" ;
 ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/bridge-hosts-stub.sh" ;
 ANYVM_VM_DO_SUDO_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/vm-do-sudo.sh" ;
+VM_DO_SUDO_DATA_PATH="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/sudoers.failsafe" ;
 ANYVM_CREATE_CI_USER_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/create_user.sh" ;
 ANYVM_WRAP_USER_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/ssh-wrapper-user.sh" ;
 ANYVM_WRAP_ROOT_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/ssh-wrapper-root.sh" ;
@@ -615,7 +616,7 @@ if matches "$VM_USER_CREATE" "true"; then
 	# TODO: match the UID of GUEST_USER
 	debug_log "Cloning CI user to guest VM"
 	if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-users.sh" ]; then
-		USER_KEY="${USER_KEY}" GUEST_USER="${GUEST_USER:-runner}" GUEST_UID="${GUEST_UID:-}" DATA_DIR="${DATA_DIR}" ANYVM_VM_DO_SUDO_FILE="${ANYVM_VM_DO_SUDO_FILE:-}" ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" DEBUG="${DEBUG:-${RUNNER_DEBUG:-}}" \
+		USER_KEY="${USER_KEY}" GUEST_USER="${GUEST_USER:-runner}" GUEST_UID="${GUEST_UID:-}" DATA_DIR="${DATA_DIR}" ANYVM_VM_DO_SUDO_FILE="${ANYVM_VM_DO_SUDO_FILE:-}" VM_DO_SUDO_DATA_PATH="${VM_DO_SUDO_DATA_PATH:-}" ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" DEBUG="${DEBUG:-${RUNNER_DEBUG:-}}" \
 		"${ANYVM_UTIL_PATH_ARG}/bridge-users.sh"
 	fi
 	# TODO: choose a consistent term: synced or cloned or bridged

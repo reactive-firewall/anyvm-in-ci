@@ -214,6 +214,7 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$VM_DO_SUDO_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/ensure_sudo.sh || user_died "failed to scp ensure_sudo script" ;
 		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$CREATE_CI_USER_SCRIPT_PATH" root@"$BRIDGE_VM":/tmp/create_user.sh || user_died "failed to scp create_user script" ;
 		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "${USER_KEY}.pub" root@"$BRIDGE_VM":/tmp/"${USER_PUB_TFILE}" || user_died "failed to scp create_user data" ;
+		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$VM_DO_SUDO_DATA_PATH" root@"$BRIDGE_VM":/root/sudoers.failsafe || user_died "failed to scp failsafe sudoers data" ;
 		debug_user_log "..=> Transferred" & debug_user_log "..=> Waiting for user sync" &
 
 		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=${DEBUG:-1} sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}" || user_died "warning: create_user execution failed with $?" ;

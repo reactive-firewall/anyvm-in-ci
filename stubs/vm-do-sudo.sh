@@ -183,7 +183,7 @@ ensure_sudoers_rule() {
 
   # NOPASSWD policy
   if [ "$MODE" = "1" ]; then
-    RULE="%$GROUP ALL=(ALL) NOPASSWD: ALL"
+    RULE="%$GROUP ALL=(ALL:ALL) NOPASSWD: ALL"
   elif [ "$MODE" = "2" ]; then
     # Whitelist commands allowed without password.
     # We express these as Cmnd_Alias entries with argument wildcards.
@@ -290,17 +290,31 @@ ensure_sudoers_rule() {
   printf '::warning::%s\n' "No /etc/sudoers.d directory; falling back to appending to /etc/sudoers."
   SUDOERS="/etc/sudoers"
   SUDOERS_BACKUP_PATH="$SUDOERS.bak.$(date +%s)"
+  SUDOERS_FAILSAFE="/root/sudoers.failsafe"
   if [ -f "$SUDOERS" ]; then
     cp -fp "$SUDOERS" "${SUDOERS_BACKUP_PATH}" >/dev/null 2>&1 || die_stub "Could not backup old sudoers" ;
-    if ! printf '%s\n' "$RULE" >> "$SUDOERS"; then
-      mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
-      die_stub "Could not update sudoers" ;
-    fi
   else
-    if ! printf '%s\n' "$RULE" > "$SUDOERS"; then
-      die_stub "Could not update sudoers" ;
-    fi
+    chmod 440 "$SUDOERS_FAILSAFE" || die_stub "Could not restrict failsafe sudoers" ;
+    chown 0 "$SUDOERS_FAILSAFE" || die_stub "Could not chown failsafe sudoers" ;
+    cp -fp "$SUDOERS_FAILSAFE" "${SUDOERS}" >/dev/null 2>&1 || die_stub "Could not use failsafe sudoers" ;
+    cp -fp "$SUDOERS_FAILSAFE" "${SUDOERS_BACKUP_PATH}" >/dev/null 2>&1 || die_stub "Could not backup falesafe sudoers" ;
   fi
+  # early cleanup
+    { chmod 600 "$SUDOERS_FAILSAFE" >/dev/null 2>&1 || die_stub "Failsafe sudoers could not be un-chmoded (for cleanup)" ;
+      rm -f "$SUDOERS_FAILSAFE" >/dev/null 2>&1 || die_stub "Failsafe sudoers could not cleaned up" ;}
+  if chmod 600 "${SUDOERS}" >/dev/null 2>&1; then
+    if [ -f "$SUDOERS" ]; then
+      if ! printf '%s\n' "$RULE" >> "$SUDOERS"; then
+        mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
+        die_stub "Could not update sudoers" ;
+      fi
+    else
+      if ! printf '%s\n' "$RULE" > "$SUDOERS"; then
+        die_stub "Could not update sudoers" ;
+      fi
+    fi
+    chmod 440 "${SUDOERS}" >/dev/null 2>&1 || die_stub "sudoers could not be un-chmoded (for cleanup)";
+  fi;
   # Validate sudoers if visudo exists
   if command -v visudo >/dev/null 2>&1; then
     if ! visudo -c >/dev/null 2>&1; then
@@ -309,6 +323,8 @@ ensure_sudoers_rule() {
       fi
       die_stub "sudoers validation failed" ;  # still fail on successful restore
     fi
+  else
+    die_stub "Could not update sudoers at all" ;
   fi
 }
 
