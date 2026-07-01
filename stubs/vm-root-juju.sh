@@ -64,51 +64,100 @@
 ################################################################################
 
 # vm-root-juju.sh -- harden SSH against trivial root access
+# Targets: Linux, BSDs, Solaris/Illumos, Darwin, Haiku, BlissOS
 
 set -eu
 
-if [ -f /etc/ssh/sshd_config ]; then
+SSHD_CONFIG="/etc/ssh/sshd_config"
+TMP_CONFIG="/etc/ssh/sshd_config.tmp"
 
-# TODO: force AuthenticationMethods "publickey" (one public key)
-# TODO: limit LoginGraceTime to a short delay
-# TODO: set MACs to only hmac-*-etm stuff
-# TODO: tune MaxStartups (try with 6:20:24)
-# TODO: overwrite SetEnv LD_PRELOAD= (e.g., to null/empty)
+# 1. Pre-flight checks
+if [ ! -f "$SSHD_CONFIG" ]; then
+    printf "::debug::%s\n" "Config file $SSHD_CONFIG not found. Skipping."
+    exit 0
+fi
 
-  for _SSHD_CONFIG_REQ_ENTITY in 'PasswordAuthentication no' \
-    'IgnoreRhosts yes' \
-    'IgnoreUserKnownHosts yes' \
-    'RekeyLimit default 1h30m' \
-    'X11Forwarding no'; do
-    # Harden against PasswordAuthentication (as they might be empty in CI/CD)
-    if [ -w /etc/ssh/sshd_config ]; then
-      if command -v grep >/dev/null 2>&1; then
-      if [ $(grep -q -F -c -e "${_SSHD_CONFIG_REQ_ENTITY}" /etc/ssh/sshd_config) -lt 1 ]; then
-        printf '\n\n%s\n' "${_SSHD_CONFIG_REQ_ENTITY:-}" >> /etc/ssh/sshd_config || true ;
-        printf "::debug::%s\n" "Hardened sshd config" ;
-      fi;
-      else
-      printf "::debug::%s\n" "Unable to check config (will skip changes)" ;
-      fi;
-    fi; # [ -w /etc/ssh/sshd_config ]
-  done ;
+if [ ! -w "$SSHD_CONFIG" ]; then
+    printf "::debug::%s\n" "Config file $SSHD_CONFIG is not writable. Skipping."
+    exit 1
+fi
 
-  # Drop Root access
-  if [ -w /etc/ssh/sshd_config ]; then
-    if command -v grep >/dev/null 2>&1; then
-      if [ $(grep -q -E -c -e "^\s*[P][e][r][m][i][t][Rr][o]{2}[t][Ll][o][g][i][n]\s+" /etc/ssh/sshd_config) -lt 1 ]; then
-        printf "\n# Restrict root user\nPermitRootLogin prohibit-password\n" >> /etc/ssh/sshd_config || true ;
-      fi;
-      if [ $(grep -q -F -c -e "DenyUsers root" /etc/ssh/sshd_config) -lt 1 ]; then
-        printf "\n\n# Prevent ROOT ACCESS\nDenyUsers root\n" >> /etc/ssh/sshd_config || true ;
-      fi;
-      printf "::debug::%s\n" "Hardened sshd root config" ;
+# 2. Create a working copy (preserves permissions)
+cp -p "$SSHD_CONFIG" "$TMP_CONFIG" 2>/dev/null || cp "$SSHD_CONFIG" "$TMP_CONFIG"
+
+# Helper function to ensure a setting is present and correct
+set_ssh_config() {
+    key="$1"
+    value="$2"
+    full_setting="$key $value"
+
+    # 1. Exact match check (Idempotency)
+    if grep -qFx "$full_setting" "$TMP_CONFIG"; then
+        return 0
+    fi
+
+    # 2. Special handling for SetEnv to avoid overwriting other environment variables
+    if [ "$key" = "SetEnv" ]; then
+        # Check if this specific variable (e.g., LD_PRELOAD) is already set
+        if grep -q "^[[:space:]]*SetEnv[[:space:]]*$value" "$TMP_CONFIG"; then
+            return 0
+        fi
+        # If it exists but has a different value, replace only that specific variable line
+        # This regex looks for SetEnv followed by the variable name (e.g., LD_PRELOAD)
+        var_name=$(printf '%s' "$value" | cut -d= -f1)
+        if grep -q "^[[:space:]]*SetEnv[[:space:]]*$var_name=" "$TMP_CONFIG"; then
+            sed "s|^[[:space:]]*SetEnv[[:space:]]*$var_name=.*|$full_setting|" "$TMP_CONFIG" > "$TMP_CONFIG.bak"
+            mv "$TMP_CONFIG.bak" "$TMP_CONFIG"
+        else
+            # Variable not found, append it
+            printf '\n%s\n' "$full_setting" >> "$TMP_CONFIG"
+        fi
     else
-      printf "::debug::%s\n" "Unable to check config (will skip changes)" ;
-    fi;
-  fi;
+        # Standard handling for single-instance keys
+        if grep -q "^[[:space:]]*$key" "$TMP_CONFIG"; then
+            sed "s|^[[:space:]]*$key.*|$full_setting|" "$TMP_CONFIG" > "$TMP_CONFIG.bak"
+            mv "$TMP_CONFIG.bak" "$TMP_CONFIG"
+        else
+            printf '\n%s\n' "$full_setting" >> "$TMP_CONFIG"
+        fi
+    fi
+    printf "::debug::%s\n" "Applied: $full_setting"
+}
 
-fi;  # [ -f /etc/ssh/sshd_config ]
+# 3. Apply General Hardening (Including former TODOs)
+settings="
+PasswordAuthentication no
+IgnoreRhosts yes
+IgnoreUserKnownHosts yes
+RekeyLimit default 1h30m
+X11Forwarding no
+AuthenticationMethods publickey
+LoginGraceTime 30
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+MaxStartups 6:20:24
+SetEnv LD_PRELOAD=
+"
+
+printf '%s' "$settings" | while read -r line; do
+    [ -z "$line" ] && continue
+    # Split line into key and value for the helper function
+    set_ssh_config $line
+done
+
+# 4. Root Access Restrictions
+set_ssh_config "PermitRootLogin" "prohibit-password"
+set_ssh_config "DenyUsers" "root"
+
+# 5. Final Atomic Deployment
+cp -p "$SSHD_CONFIG" "${SSHD_CONFIG}.bak" 2>/dev/null || cp "$SSHD_CONFIG" "${SSHD_CONFIG}.bak"
+mv "$TMP_CONFIG" "$SSHD_CONFIG"
+
+printf "::debug::%s\n" "SSHD hardening complete. (will restart sshd)"
+
+# do some cleanup first
+unset settings
+unset TMP_CONFIG
+unset set_ssh_config 2>/dev/null || true
 
 # reload sshd safely (try multiple names)
 # Try commands safely: run "$@" and return 0/1 (no exit)
