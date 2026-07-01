@@ -245,16 +245,17 @@ if command -v pw >/dev/null 2>&1; then
   # critical to allow sudo usage on *bsd systems
   pw groupmod $(detect_admin_group) -m "$USERNAME" ;
 fi
-
-if command -v id >/dev/null 2>&1; then
-  id "$USERNAME" || true
+# more diognostics if in debug mode
+if [ "${DEBUG:-0}" -eq 1 ]; then
+  if command -v id >/dev/null 2>&1; then
+    id "$USERNAME" || true
+  fi
 fi
-
 # rest of the cleanup
 unset USERGROUP
 unset USER_HOME_BASE_PATH
 
-printf '%s\n' "CI user ${USERNAME:-} synced to VM" ;
+printf '%s\n' "CI user ${USERNAME:-} synced to VM successfully" ;
 
 unset USERNAME 2>/dev/null || true ;
 unset debug_remote_log 2>/dev/null || true ;

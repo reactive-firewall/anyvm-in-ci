@@ -120,6 +120,7 @@ ANYVM_BRIDGE_HOSTS_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/bridge-hosts-stub.sh
 ANYVM_VM_DO_SUDO_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/vm-do-sudo.sh" ;
 VM_DO_SUDO_DATA_PATH="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/sudoers.failsafe" ;
 ANYVM_CREATE_CI_USER_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/create_user.sh" ;
+ANYVM_DROP_ROOT_FILE_PATH="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/vm-root-juju.sh" ;
 ANYVM_WRAP_USER_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/ssh-wrapper-user.sh" ;
 ANYVM_WRAP_ROOT_FILE="${ANYVM_UTIL_PATH_ARG:-.}/../stubs/ssh-wrapper-root.sh" ;
 
@@ -712,6 +713,15 @@ else
 	debug_log "Source workspace is empty – only directory path was created on guest VM"
 fi
 
+if matches "$VM_USER_CREATE" "true"; then
+	if [ -x "${ANYVM_UTIL_PATH_ARG}/vm-unroot.sh" ]; then
+		ANYVM_DROP_ROOT_FILE_PATH="${ANYVM_DROP_ROOT_FILE_PATH}" DATA_DIR="${DATA_DIR}" ANYVM_CREATE_CI_USER_FILE="${ANYVM_CREATE_CI_USER_FILE}" SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS" VM_SSH_HOST="$VM_SSH_HOST" VM_SSH_PORT="$VM_SSH_PORT" DEBUG="${DEBUG:-${RUNNER_DEBUG:-}}" \
+		"${ANYVM_UTIL_PATH_ARG}/vm-unroot.sh"
+	fi
+else
+	debug_log "Skipping root drop (set drop-root to true to use a typical user instead)"
+fi
+
 # 7. run startup hook if exists
 "${VMSH_CMD}" $"[ -x ./startup.sh ] && ./startup.sh || true" || true
 
@@ -738,8 +748,12 @@ if matches "${COPYBACK:-}" "true"; then
 		RSYNC_EPHEMERAL_OPTS="$RSYNC_EPHEMERAL_OPTS -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $RSYNC_KEY -o ConnectTimeout=35"
 		rsync -a --delete -e "ssh ${RSYNC_EPHEMERAL_OPTS} -p $VM_SSH_PORT" "${GUEST_RSYNC_USER}@${VM_SSH_HOST}:$GITHUB_WS/" "$GITHUB_WS/"
 	else
-		# Use trailing slash and /* glob to copy contents, not the directory itself
-		scp -r -P "$VM_SSH_PORT" -i "${EPHEM_KEY}" $SSH_EPHEMERAL_OPTS "root@${VM_SSH_HOST}:$GITHUB_WS/" "$GITHUB_WS/"
+		if matches "$VM_USER_CREATE" "true"; then
+			scp -r -P "$VM_SSH_PORT" -i "${USER_KEY}" $SSH_EPHEMERAL_OPTS "${GUEST_USER}@${VM_SSH_HOST}:$GITHUB_WS/" "$GITHUB_WS/"
+		else
+			# Use trailing slash and /* glob to copy contents, not the directory itself
+			scp -r -P "$VM_SSH_PORT" -i "${EPHEM_KEY}" $SSH_EPHEMERAL_OPTS "root@${VM_SSH_HOST}:$GITHUB_WS/" "$GITHUB_WS/"
+		fi
 	fi
 fi;
 
@@ -757,10 +771,10 @@ fi
 
 # shred keys if shred exists, else rm
 if command -v shred >/dev/null 2>&1; then
-	shred -u "${EPHEM_KEY}" || rm -f "${EPHEM_KEY}"
+	[ -n "${EPHEM_KEY:-}" ] && shred -u "${EPHEM_KEY}" || rm -f "${EPHEM_KEY}"
 	[ -n "${USER_KEY:-}" ] && (shred -u "${USER_KEY}" || rm -f "${USER_KEY}")
 else
-	rm -f "${EPHEM_KEY}"
+	[ -n "${EPHEM_KEY:-}" ] && rm -f "${EPHEM_KEY}"
 	[ -n "${USER_KEY:-}" ] && rm -f "${USER_KEY}"
 fi
 [ -n "${ROTATE_ROOT_SCRIPT_PATH:-}" ] && rm -f "$ROTATE_ROOT_SCRIPT_PATH" || true

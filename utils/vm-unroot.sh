@@ -1,6 +1,6 @@
-#! /bin/sh
+#! /bin/bash
 #
-# SPDX-License-Identifier: BSD-0-Clause OR MIT-0
+# SPDX-License-Identifier: BSD-3-Clause OR MIT
 #
 # Disclaimer of Warranties.
 # A. YOU EXPRESSLY ACKNOWLEDGE AND AGREE THAT, TO THE EXTENT PERMITTED BY
@@ -63,36 +63,72 @@
 #    even if the above stated remedy fails of its essential purpose.
 ################################################################################
 
-# expand_tilde NAME
-# Portable /bin/sh-compatible function returning tilde expanded paths from input
-expand_tilde() {
-  _p=${1-}
-  case $_p in
-    "~")
-      printf '%s' "$HOME"
-      ;;
-    "~/"*)
-      printf '%s/%s' "$HOME" "${_p#~/}" | tr -d '~'
-      ;;
-    *)
-      printf '%s' "$_p"
-      ;;
-  esac
-}
+test -x "$(command -v awk)" || exit 126 ;
+test -x "$(command -v grep)" || exit 126 ;
+test -x "$(command -v scp)" || exit 126 ;
+test -x "$(command -v sed)" || exit 126 ;
+test -x "$(command -v ssh)" || exit 126 ;
+test -x "$(command -v ssh-keygen)" || exit 126 ;
+test -x "$(command -v openssl)" || exit 126 ;
+# just assume these are provided and skip checks
+#test -x "$(command -v cd)" || exit 126 ;
+#test -x "$(command -v cp)" || exit 126 ;
+#test -x "$(command -v chmod)" || exit 126 ;
+#test -x "$(command -v mv)" || exit 126 ;
 
-case "$0" in
-  *expand-path-tilde.sh)
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        -*) shift ;;
-        *)  break ;;
-      esac
-    done
+set -eu
 
-    expand_tilde "${1:-}" || exit 1
-    exit 0
-    ;;
-esac  # else import as source
+# TODO: add check for SSH_EPHEMERAL_OPTS or abort
 
-# Example usage:
-# expand-path-tilde.sh PATH_IN && echo "OK" || echo "failed"
+ANYVM_DROP_ROOT_FILE_PATH="${ANYVM_DROP_ROOT_FILE_PATH:-}"
+HOST_DATA_DIR="${DATA_DIR:-}"
+SSH_EPHEMERAL_OPTS="${SSH_EPHEMERAL_OPTS:-}"
+GUEST_VM="${VM_SSH_HOST:-127.0.0.1}"
+GUEST_VM_PORT="${VM_SSH_PORT:-22}"
+
+# helper: conditional diagnostic with message
+debug_harden_log(){ if [ "${DEBUG:-0}" -eq 1 ]; then printf '::debug:: %s\n' "$*"; fi; }
+
+# helper: fail with message
+hard_death(){ printf "::error title='SECURITY':: %s\n" "$*" >&2; exit 1; }
+
+GUEST_VERBOSE_FLAG=${GUEST_VERBOSE_FLAG:-}
+# always enable if DEBUG mode
+if [ "${DEBUG:-0}" -eq 1 ]; then GUEST_VERBOSE_FLAG="-v"; fi;
+
+# TODO: verify ANYVM_BRIDGE_HOSTS_FILE is a file that exists
+if [ -f "${ANYVM_DROP_ROOT_FILE_PATH:-}" ]; then
+
+  debug_sub_log "Preparing script to bridge hosts on Guest VM" ;
+  GUEST_DROP_ROOT_SCRIPT_PATH="$HOST_DATA_DIR/drop-root-$RANDOM$RANDOM$RANDOM$RANDOM$$.sh"
+  cp ${GUEST_VERBOSE_FLAG:-} -f "${ANYVM_DROP_ROOT_FILE_PATH}" "$GUEST_DROP_ROOT_SCRIPT_PATH"
+  debug_sub_log "=> Staged" & debug_sub_log "..=> Setting Permissions on staged script" ;
+  chmod ${GUEST_VERBOSE_FLAG:-} +x "$GUEST_DROP_ROOT_SCRIPT_PATH"
+  debug_sub_log "Ready to transfer \"${GUEST_DROP_ROOT_SCRIPT_PATH}\" to Guest VM" ;
+  debug_sub_log "....=> Waiting for transfer" ;
+  EDROP_ROOT_TFILE=$(printf '%s\n' "$RANDOM$RANDOM$RANDOM$RANDOM" | openssl dgst -sha256 - | cut -d\= -f 2-2 | tr -d ' ' | head -n1)
+  #mask_inputs "${EDROP_ROOT_TFILE}";
+  scp $SSH_EPHEMERAL_OPTS -P $GUEST_VM_PORT "$GUEST_DROP_ROOT_SCRIPT_PATH" root@"$GUEST_VM":/tmp/"$EDROP_ROOT_TFILE.sh" || hard_death "failed to scp drop-root script"
+  debug_sub_log "..=> Transferred" & debug_sub_log "..=> Waiting to drop root" &
+  # remote merge script: run on guest (idempotent-ish)
+  ssh $SSH_EPHEMERAL_OPTS -p ${GUEST_VM_PORT:-22} root@"$GUEST_VM" "sh /tmp/$EDROP_ROOT_TFILE.sh" || hard_death "IMPORTANT: drop-root execution failed (root may still be available)"
+  debug_sub_log "=> Ready to drop root"
+  unset EDROP_ROOT_TFILE || true
+
+  # best effort cleanup
+  rm ${GUEST_VERBOSE_FLAG:-} -f "$GUEST_DROP_ROOT_SCRIPT_PATH}" 2>/dev/null || true ; # un-stage as needed (but never error)
+else
+  hard_death "Error missing expected resource at '${ANYVM_DROP_ROOT_FILE_PATH:-}'" ;
+fi ;
+
+unset GUEST_VM
+unset GUEST_VM_PORT
+unset HOST_DATA_DIR
+unset GUEST_VERBOSE_FLAG
+unset ANYVM_DROP_ROOT_FILE_PATH
+unset GUEST_DROP_ROOT_SCRIPT_PATH
+unset debug_harden_log || true
+unset hard_death || true
+
+# done
+exit 0; # always exit 0

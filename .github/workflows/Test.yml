@@ -38,18 +38,16 @@ jobs:
           sync-time: true
           usesh: true
           prepare: |
-            set -eux
-            # set -e -u -x: fail fast, treat unset vars as error, show commands
+            set -eu
+            # set -e -u: fail fast, treat unset vars as error
             printf "%s\n" "Pre-CI: start $(date -u)"
             uname -a 2>&1 || true
             freebsd-version 2>&1 || true
             # Example package operations; keep permission/rate limits in mind
             if command -v pkg >/dev/null 2>&1; then
-              sudo pkg update -f 2>&1 || sudo -l
-              echo "debug where pkg is:"
-              command -v pkg || true
-              which pkg || true
+              sudo pkg update -f 2>&1 || true
               sudo pkg install -y llvm22 2>&1 || true
+              sudo pkg install -y gh || true
             fi
             # Ensure scripts are executable
             # chmod +x ./run-ci.sh
@@ -57,6 +55,4 @@ jobs:
           run: |
             set -eu
             # set -e -u: fail fast, treat unset vars as error
-            printf "%s\n" "CI: start $(date -u)"
-            printf "%s\n" "Test of Boot worked"
-            printf "%s\n" "CI: end $(date -u)"
+            printf "%s\n" "Test of Guest VM in CI/CD worked (hello-world)"

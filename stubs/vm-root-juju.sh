@@ -63,6 +63,8 @@
 #    even if the above stated remedy fails of its essential purpose.
 ################################################################################
 
+# vm-root-juju.sh -- harden SSH against trivial root access
+
 set -eu
 
 if [ -f /etc/ssh/sshd_config ]; then
@@ -98,7 +100,7 @@ if [ -f /etc/ssh/sshd_config ]; then
         printf "\n# Restrict root user\nPermitRootLogin prohibit-password\n" >> /etc/ssh/sshd_config || true ;
       fi;
       if [ $(grep -q -F -c -e "DenyUsers root" /etc/ssh/sshd_config) -lt 1 ]; then
-        printf "\n\n# Prevent ROOT ACCESS\nDenyUsers root" >> /etc/ssh/sshd_config || true ;
+        printf "\n\n# Prevent ROOT ACCESS\nDenyUsers root\n" >> /etc/ssh/sshd_config || true ;
       fi;
       printf "::debug::%s\n" "Hardened sshd root config" ;
     else
@@ -107,3 +109,97 @@ if [ -f /etc/ssh/sshd_config ]; then
   fi;
 
 fi;  # [ -f /etc/ssh/sshd_config ]
+
+# reload sshd safely (try multiple names)
+# Try commands safely: run "$@" and return 0/1 (no exit)
+_try() {
+  if command -v "$1" >/dev/null 2>&1; then
+    shift
+    "$@" >/dev/null 2>&1 && return 0 || return 1
+  fi
+  return 2
+}
+
+# Try a list of command invocations (each invocation is a single string)
+_try_list() {
+  for cmd in "$@"; do
+    # shellcheck disable=SC2086
+    sh -c "$cmd" >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
+# Common service names to try (order: typical -> fallback)
+SERVICE_NAMES="sshd ssh"
+
+# 1) systemctl (Linux)
+if command -v systemctl >/dev/null 2>&1; then
+  for name in $SERVICE_NAMES; do
+    _try systemctl systemctl try-reload-or-restart "${name}.service" && exit 0
+    _try systemctl systemctl reload "${name}.service" && exit 0
+    _try systemctl systemctl restart "${name}.service" && exit 0
+  done
+fi
+
+# 2) rc.d / service wrapper used on FreeBSD/OpenBSD/NetBSD
+# On BSDs, `service name action` is typical; on some systems action "reload" may not exist.
+if command -v service >/dev/null 2>&1; then
+  for name in $SERVICE_NAMES; do
+    _try service service "$name" reload && exit 0
+    _try service service "$name" restart && exit 0
+    # On some systems the service control is in /etc/rc.d/ or /usr/sbin/rcctl (OpenBSD)
+  done
+fi
+
+# 3) rcctl (OpenBSD) — prefer explicit rcctl if present
+if command -v rcctl >/dev/null 2>&1; then
+  for name in $SERVICE_NAMES; do
+    _try rcctl rcctl reload "$name" && exit 0
+    _try rcctl rcctl restart "$name" && exit 0
+  done
+fi
+
+# 4) /etc/rc.d or /usr/local/etc/rc.d scripts (FreeBSD-style direct script)
+for name in $SERVICE_NAMES; do
+  if [ -x "/etc/rc.d/$name" ]; then
+    _try_list "/etc/rc.d/$name reload" "/etc/rc.d/$name restart" && exit 0
+  fi
+  if [ -x "/usr/local/etc/rc.d/$name" ]; then
+    _try_list "/usr/local/etc/rc.d/$name reload" "/usr/local/etc/rc.d/$name restart" && exit 0
+  fi
+done
+
+# 5) OpenSSH's sshd direct signal (safe reload using SIGHUP) — will not restart if binary name differs
+for candidate in /usr/sbin/sshd /usr/local/sbin/sshd /sbin/sshd /usr/sbin/ssh; do
+  if [ -x "$candidate" ]; then
+    # Find master pid (sshd -T is not used). Use pgrep for sshd process.
+    if command -v pgrep >/dev/null 2>&1; then
+      pid=$(pgrep -x sshd || true)
+    else
+      pid=$(ps ax | awk '/[s]shd/ {print $1; exit}' || true)
+    fi
+    if [ -n "$pid" ]; then
+      kill -HUP "$pid" >/dev/null 2>&1 && exit 0
+    fi
+  fi
+done
+
+# 6) Haiku (launch_daemon control via haiku-specific tools)
+# Haiku often runs services via launch_daemon; use `launchctl` if available (Haiku compatibility) or try haikucontrol.
+if command -v launchctl >/dev/null 2>&1; then
+  for name in $SERVICE_NAMES; do
+    _try launchctl launchctl unload "/system/services/${name}" && _try launchctl launchctl load "/system/services/${name}" && exit 0
+  done
+fi
+if command -v haikucontrol >/dev/null 2>&1; then
+  for name in $SERVICE_NAMES; do
+    _try haikucontrol haikucontrol restart "$name" && exit 0
+  done
+fi
+
+# 7) Fall back: try common init scripts (SysV-style)
+for name in $SERVICE_NAMES; do
+  if [ -x "/etc/init.d/$name" ]; then
+    _try_list "/etc/init.d/$name reload" "/etc/init.d/$name restart" && exit 0
+  fi
+done
