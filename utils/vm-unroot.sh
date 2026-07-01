@@ -63,12 +63,9 @@
 #    even if the above stated remedy fails of its essential purpose.
 ################################################################################
 
-test -x "$(command -v awk)" || exit 126 ;
-test -x "$(command -v grep)" || exit 126 ;
+test -x "$(command -v cut)" || exit 126 ;
 test -x "$(command -v scp)" || exit 126 ;
-test -x "$(command -v sed)" || exit 126 ;
 test -x "$(command -v ssh)" || exit 126 ;
-test -x "$(command -v ssh-keygen)" || exit 126 ;
 test -x "$(command -v openssl)" || exit 126 ;
 # just assume these are provided and skip checks
 #test -x "$(command -v cd)" || exit 126 ;
@@ -99,20 +96,20 @@ if [ "${DEBUG:-0}" -eq 1 ]; then GUEST_VERBOSE_FLAG="-v"; fi;
 # TODO: verify ANYVM_BRIDGE_HOSTS_FILE is a file that exists
 if [ -f "${ANYVM_DROP_ROOT_FILE_PATH:-}" ]; then
 
-  debug_sub_log "Preparing script to bridge hosts on Guest VM" ;
+  debug_harden_log "Preparing script to bridge hosts on Guest VM" ;
   GUEST_DROP_ROOT_SCRIPT_PATH="$HOST_DATA_DIR/drop-root-$RANDOM$RANDOM$RANDOM$RANDOM$$.sh"
   cp ${GUEST_VERBOSE_FLAG:-} -f "${ANYVM_DROP_ROOT_FILE_PATH}" "$GUEST_DROP_ROOT_SCRIPT_PATH"
-  debug_sub_log "=> Staged" & debug_sub_log "..=> Setting Permissions on staged script" ;
+  debug_harden_log "=> Staged" & debug_harden_log "..=> Setting Permissions on staged script" ;
   chmod ${GUEST_VERBOSE_FLAG:-} +x "$GUEST_DROP_ROOT_SCRIPT_PATH"
-  debug_sub_log "Ready to transfer \"${GUEST_DROP_ROOT_SCRIPT_PATH}\" to Guest VM" ;
-  debug_sub_log "....=> Waiting for transfer" ;
+  debug_harden_log "Ready to transfer \"${GUEST_DROP_ROOT_SCRIPT_PATH}\" to Guest VM" ;
+  debug_harden_log "....=> Waiting for transfer" ;
   EDROP_ROOT_TFILE=$(printf '%s\n' "$RANDOM$RANDOM$RANDOM$RANDOM" | openssl dgst -sha256 - | cut -d\= -f 2-2 | tr -d ' ' | head -n1)
   #mask_inputs "${EDROP_ROOT_TFILE}";
   scp $SSH_EPHEMERAL_OPTS -P $GUEST_VM_PORT "$GUEST_DROP_ROOT_SCRIPT_PATH" root@"$GUEST_VM":/tmp/"$EDROP_ROOT_TFILE.sh" || hard_death "failed to scp drop-root script"
-  debug_sub_log "..=> Transferred" & debug_sub_log "..=> Waiting to drop root" &
+  debug_harden_log "..=> Transferred" & debug_harden_log "..=> Waiting to drop root" &
   # remote merge script: run on guest (idempotent-ish)
   ssh $SSH_EPHEMERAL_OPTS -p ${GUEST_VM_PORT:-22} root@"$GUEST_VM" "sh /tmp/$EDROP_ROOT_TFILE.sh" || hard_death "IMPORTANT: drop-root execution failed (root may still be available)"
-  debug_sub_log "=> Ready to drop root"
+  debug_harden_log "=> Ready to drop root"
   unset EDROP_ROOT_TFILE || true
 
   # best effort cleanup
