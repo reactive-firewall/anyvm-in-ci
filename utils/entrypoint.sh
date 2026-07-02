@@ -80,14 +80,14 @@ unset MY_OWN_PATH ;
 set -eu
 
 # MARK: load functions
-. "${ANYVM_UTIL_PATH_ARG:-.}/latest-vm-release.sh" ;
+. "${ANYVM_UTIL_PATH_ARG:-.}/stable-vm-release.sh" ;
 . "${ANYVM_UTIL_PATH_ARG:-.}/latest-vm-builder.sh" ;
 . "${ANYVM_UTIL_PATH_ARG:-.}/expand-path-tilde.sh" ;
 
 # MARK: Inputs
 DEBUG=$( [ "${ACTIONS_RUNNER_DEBUG:-}" ] || [ "${ACTIONS_STEP_DEBUG:-}" ] || [ "${INPUT_DEBUG:-}" ] && printf 1 || printf 0 )
 ANYVM_OSNAME="${INPUT_OSNAME:-freebsd}"  # freebsd / ghostbsd / openbsd / netbsd / dragonflybsd / midnightbsd / solaris / omnios / openindiana / tribblix / haiku / ubuntu / blissos
-ANYVM_RELEASE="${INPUT_RELEASE:-$(get_latest_vm_release $ANYVM_OSNAME)}"
+ANYVM_RELEASE="${INPUT_RELEASE:-$(get_stable_vm_release $ANYVM_OSNAME)}"
 ANYVM_ARCH="${INPUT_ARCH:-}"  # x86_64 / aarch64 / riscv64 / s390x / powerpc64 / ppc64le / sparc64
 ANYVM_MEM="${INPUT_MEM:-6144}"  # e.g., default to ((6*1024)*(1024*1024))/(1024*1024) MiB
 ANYVM_CPU="${INPUT_CPU:-1}"

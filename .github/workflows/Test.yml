@@ -46,7 +46,7 @@ on:
       memory:
         description: "Memory size of the VM in MB"
         # see https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories
-        type: number
+        type: choice
         options:
           - 1024
           - 2048
@@ -79,7 +79,6 @@ on:
           - sparc64  # experimental
         required: false
         default: null
-
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
