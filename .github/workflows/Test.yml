@@ -78,7 +78,7 @@ on:
           - ppc64le  # experimental
           - sparc64  # experimental
         required: false
-        default: 'x86_64'
+        default: null
 
 
 concurrency:

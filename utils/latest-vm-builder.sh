@@ -79,10 +79,21 @@ get_latest_vm_builder() {
   name=$(printf '%s' "${1:-}" | awk '{print tolower($0)}')
   [ -n "$name" ] || return 1
 
+  fetch() {
+    url=$1
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsL -H "Accept: application/vnd.github+json" --max-time 15 "$url" || return 1
+    elif command -v wget >/dev/null 2>&1; then
+      wget -qO- --timeout=15 "$url" || return 1
+    else
+      return 1
+    fi
+  }
+
   gh_latest_tag() {
     repo_stub="$1"   # owner/repo
     tag_name=''
-    response="$(curl -fsSL -H "Accept: application/vnd.github+json" --url "https://api.github.com/repos/${repo_stub}/releases/latest")" || return 1
+    response="$(fetch "https://api.github.com/repos/${repo_stub}/releases/latest")" || return 1
     if command -v jq >/dev/null 2>&1; then
       tag_name="$(printf '%s\n' "$response" | jq -r '.tag_name // empty')"
     else

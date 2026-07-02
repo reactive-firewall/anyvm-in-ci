@@ -208,9 +208,9 @@ runs:
           ${{ inputs.cache-dir }}/anyvm-py/images/*.qcow2.zst
           ${{ inputs.cache-dir }}/anyvm-py/images/**/*.qcow2
           ${{ runner.tool_cache }}/anyvm-in-ci/bin/${{ inputs.custom-shell-name || 'vmsh' }}
-        key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
+        key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release || 'ANY' }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
         restore-keys: |
-          ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-
+          ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release || 'ANY' }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-
     - name: "Validate inputs and run anyvm"
       id: anyvm-entrypoint
       shell: bash
@@ -286,7 +286,7 @@ runs:
         path: |
           ${{ inputs.cache-dir }}/**/anyvm.py
           ${{ runner.tool_cache }}/anyvm-in-ci/bin/**
-        key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
+        key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release || 'ANY' }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
         lookup-only: true
     - name: Save QEMU Cache
       id: anyvm_cache_2
