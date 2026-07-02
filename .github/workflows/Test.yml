@@ -78,7 +78,7 @@ on:
           - ppc64le  # experimental
           - sparc64  # experimental
         required: false
-        default: null
+        default: 'x86_64'
 
 
 concurrency:
@@ -99,7 +99,7 @@ jobs:
         uses: reactive-firewall/anyvm-in-ci@master # WIP
         with:
           osname: ${{ inputs.vm_os || 'freebsd' }}
-          arch: ${{ inputs.vm_arch || null }}
+          arch: ${{ inputs.vm_arch }}
           # release: '15.1'
           mem: ${{ inputs.memory || 3072 }}                # request 8GB RAM for the guest
           sync: scp                # try using scp for sync (localhost scp)

@@ -38,6 +38,7 @@ inputs:
     description: "The OS release/version of the VM image"
     type: string
     required: false
+    default: null
   arch:
     description: "The CPU architecture of the VM (e.g., x86_64, aarch64)"
     type: choice
