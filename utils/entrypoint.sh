@@ -613,7 +613,7 @@ else
 fi
 
 printf "::endgroup::\n";
-
+printf "::group::%s\n" "Setup-Guest-BL" ;
 # 4e. copy host /etc/hosts to guest (temp file) - best-effort
 debug_log "Bridging host file to guest"
 if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh" ]; then
@@ -623,12 +623,13 @@ if [ -x "${ANYVM_UTIL_PATH_ARG}/bridge-hosts.sh" ]; then
 else
 	# best-effort fallback
 	debug_log "=> Bridging via root"
-	scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT /etc/hosts root@"$VM_SSH_HOST":/tmp/hosts.guest || die "failed to scp runner host file script"
-	ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "cat /tmp/hosts.guest >> /etc/hosts || true" || die "failed to clobber Guest /etc/hosts"
+	scp $SSH_EPHEMERAL_OPTS -P $VM_SSH_PORT /etc/hosts root@"$VM_SSH_HOST":/tmp/hosts.guest || error_close_and_die "failed to scp runner host file script"
+	ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "cat /tmp/hosts.guest >> /etc/hosts || true" || error_close_and_die "failed to clobber Guest /etc/hosts"
 fi
 
 debug_log "Bridging done"
-
+printf "::endgroup::\n";
+printf "::group::%s\n" "Setup-Guest-USER" ;
 USER_KEY="";
 # 4f. optionally create unprivileged user matching host and set its authorized_keys to its own ephemeral key
 if matches "$VM_USER_CREATE" "true"; then
@@ -697,8 +698,10 @@ if [ -d "${VMSH_DIR:-}" ]; then
 	esac
 fi
 
-debug_log "Bootstrap done"
+printf "::endgroup::\n";
 
+debug_log "Bootstrap done"
+printf "::group::%s\n" "Workspace-Sync" ;
 # MARK: REPLICATE GH workspace
 # 6. recreate full GITHUB_WORKSPACE path and rsync content
 GITHUB_WS="${GITHUB_WORKSPACE:-$PWD}"
@@ -745,6 +748,7 @@ else
 	debug_log "Skipping root drop (set drop-root to true to use a typical user instead)"
 fi
 
+printf "::endgroup::\n";
 # 7. run startup hook if exists
 "${VMSH_CMD}" $"[ -x ./startup.sh ] && ./startup.sh || true" || true
 
@@ -757,13 +761,14 @@ fi
 
 # 9. run CI command (required)
 if [ -n "${INPUT_RUN:-}" ]; then
-	printf "::group::%s\n" "Run step on VM" ;
+	printf "::group::%s\n" "Run step (on VM)" ;
 	"${VMSH_CMD}" "$INPUT_RUN" ;
 	printf "\n::endgroup::\n" ;
 fi
 
 # 10. optional copyback logic
 if matches "${COPYBACK:-}" "true"; then
+	printf "::group::%s\n" "Copyback" ;
 	if matches "$SYNC_METHOD" "rsync"; then
 		GUEST_RSYNC_USER="${GUEST_USER:-runner}"
 		RSYNC_KEY="${USER_KEY:-${EPHEM_KEY:-}}"
@@ -778,6 +783,7 @@ if matches "${COPYBACK:-}" "true"; then
 			scp -r -P "$VM_SSH_PORT" -i "${EPHEM_KEY}" $SSH_EPHEMERAL_OPTS "root@${VM_SSH_HOST}:$GITHUB_WS/" "$GITHUB_WS/"
 		fi
 	fi
+	printf "\n::endgroup::\n" ;
 fi;
 
 # 10b afterwards
