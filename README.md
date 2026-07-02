@@ -23,7 +23,7 @@ Status
 | `prepare` | string | no | — | Shell commands to run inside the VM before `run` (pre-run hook) |
 | `run` | string | no | — | CI command(s) to run inside the VM |
 | `afterwards` | string | no | — | Shell commands to run inside the VM after `run` (post-run hook) |
-| `release` | string | no | — | OS release/version of the VM image (passed to anyvm) |
+| `release` | string | no | _latest supported by anyvm_ | OS release/version of the VM image (passed to anyvm) |
 | `arch` | choice | no | null | VM CPU architecture. Options: `x86_64`, `aarch64`, `riscv64`, `s390x`, `powerpc64`, `ppc64le`, `sparc64` |
 | `envs` | string | no | — | Extra environment variables to forward to the VM (newline-separated KEY=VALUE pairs or names to forward via SSH SendEnv as configured) |
 | `mem` | number | no | `3072` | Memory (MB) for the VM. Note: entrypoint.sh has a different fallback default (6144) — see implementation notes. |
@@ -33,11 +33,11 @@ Status
 | `sync` | choice | no | `scp` | Strategy for synchronizing the workspace to/from the VM. Options: `rsync`, `scp` |
 | `copyback` | boolean | no | `true` | Copy build artifacts back from VM to host when done |
 | `drop-root` | boolean | no | `true` | Create a runner-style unprivileged user on the VM instead of using `root` for CI steps |
-| `data-dir` | string | no | — | Directory inside cache to store VM images and data |
+| `data-dir` | string | no | `'data'` | Directory inside cache to store VM images and data |
 | `cache-dir` | string | no | `~/Library/Caches/anyvm-in-ci` | Cache location used by the action |
 | `sync-time` | boolean | no | `false` | Synchronize VM time with NTP |
 | `disable-cache` | boolean | no | `false` | Disable local caching for packages and VM images |
-| `custom-shell-name` | string | no | `vmsh` | Name for the generated wrapper script that runs commands inside the VM |
+| `custom-shell-name` | string | no | `'vmsh'` | Name for the generated wrapper script that runs commands inside the VM |
 | `ipv6-enabled` | boolean | no | `false` | Enable IPv6 networking mode inside the guest |
 | `token` | string | Optional (required for GHES) | `github.token` or null | Token for GitHub API operations, including when fetching anyvm builders when required (defaults to `github.token` on github.com) |
 
