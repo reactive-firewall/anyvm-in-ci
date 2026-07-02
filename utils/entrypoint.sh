@@ -154,6 +154,15 @@ debug_log "=> Defining error handling function" &
 # helper: fail with message
 die(){ printf "::error file='%s',title='ERROR':: %s\n" "${0}" "$*" >&2; exit 1; }
 
+# helper: close a group with an error message
+error_and_close_group() {
+	printf "::error title='ERROR':: %s\n" "$*" >&2;
+	printf "\n::endgroup::\n\n" ;
+}
+
+# helper: fail stylishly with a message
+error_close_and_die() { error_and_close_group "$*" ; exit 1; }
+
 debug_log "=> Defining safe uuidgen function" &
 # helper: portable uuidgen
 safe_uuidgen() {
@@ -200,7 +209,7 @@ debug_log "=> Defining GitHub QEMU installer function" &
 install_qemu(){
 	printf "::group::%s\n" "Setup-QEMU" ;
 	if command -v qemu-system-x86_64 >/dev/null 2>&1; then
-		printf '%s\n' "qemu present"
+		printf '%s\n::endgroup::\n' "qemu present" ;
 		return
 	fi
 	case "$(uname -s)" in
@@ -212,10 +221,10 @@ install_qemu(){
 					qemu-system-x86 qemu-system-arm qemu-efi-aarch64 \
 					qemu-efi-riscv64 qemu-system-riscv64 qemu-system-misc u-boot-qemu \
 					qemu-system-ppc qemu-system-s390x qemu-system-sparc \
-					openssh-client || die "failed to install qemu via apt-get"
+					openssh-client || error_close_and_die "failed to install qemu via apt-get"
 			elif command -v yum >/dev/null 2>&1; then
 				printf '%s\n' "Unsupported runner OS"
-				sudo yum install -y qemu-kvm qemu-img || die "failed to install qemu via yum"
+				sudo yum install -y qemu-kvm qemu-img || error_close_and_die "failed to install qemu via yum"
 			fi
 			;;
 		Darwin)
@@ -224,7 +233,7 @@ install_qemu(){
 				# TODO: set other hombrew vars when cache mode is enabled (and configure GHA cache for brew)
 				if [ "${DEBUG}" -eq 1 ]; then export HOMEBREW_VERBOSE=${DEBUG}; else export HOMEBREW_NO_ENV_HINTS=1; fi ;
 				export HOMEBREW_NO_INSECURE_REDIRECT=1;  # forbid redirects from secure HTTPS to insecure HTTP
-				HOMEBREW_GITHUB_API_TOKEN="${ANYVM_TOKEN:-${GH_TOKEN:-}}" brew install qemu || die "failed to install qemu via homebrew" ;
+				HOMEBREW_GITHUB_API_TOKEN="${ANYVM_TOKEN:-${GH_TOKEN:-}}" brew install qemu || error_close_and_die "failed to install qemu via homebrew" ;
 				unset HOMEBREW_GITHUB_API_TOKEN ;
 			else
 				die "Homebrew required on macOS to install qemu"
@@ -232,11 +241,11 @@ install_qemu(){
 			;;
 		MINGW*|MSYS*|CYGWIN*)
 			if command -v choco >/dev/null 2>&1; then
-				choco install qemu -y || die "failed to install qemu via choco"
+				choco install qemu -y || error_close_and_die "failed to install qemu via choco"
 			fi
 			;;
 		*)
-			die "Unsupported runner OS"
+			error_close_and_die "Unsupported runner OS"
 			;;
 	esac
 	printf "::endgroup::\n" ;
@@ -348,11 +357,12 @@ install_qemu
 
 debug_log "=> qemu installed" &
 
-# 2. fetch anyvm from github and use its anyvm.py
+# 2. fetch anyvm.py from github and use it
 
 debug_log "Ensure we have anyvm.py..."
-# Download anyvm.py (kept)
 
+# Download anyvm.py (kept)
+printf "::group::%s\n" "Setup-ANYVM" ;
 if [ -n "${ANYVM_CACHE_BASE:-}" ] && [ ! -f "${ANYVM_PY_PATH:-}" ]; then
 	debug_log "=> anyvm.py not found in cache"
 	ANYVM_PY_IN_CACHE=0;
@@ -366,19 +376,25 @@ fi
 
 if [ -n "${ANYVM_PY_IN_CACHE}" ] || [ "${ANYVM_PY_IN_CACHE}" -ne 1 ] ; then
 	debug_log "=> must download anyvm.py" &
-	download_file "$ANYVM_URL" "$ANYVM_PY_PATH" || die "failed to download anyvm.py"
-	debug_log "download anyvm.py"
+	download_file "$ANYVM_URL" "$ANYVM_PY_PATH" || error_close_and_die "failed to download anyvm.py"
+	debug_log "Downloaded anyvm.py"
 else
 	# leverage cache here
 	debug_log "=> Will use cached path: \"${ANYVM_PY_PATH:-}\""
 fi
 
-# TODO: add conditional check here
-chmod +x "$ANYVM_PY_PATH" || true
+# conditional check here for execute
+if [ -x "$ANYVM_PY_PATH" ]; then
+	debug_log "=> skipping redundant chmod (execute bit already set)" ;
+else
+	chmod +x "$ANYVM_PY_PATH" || error_close_and_die "Can't execute anyvm.py tool!"
+fi
 
 # 2b. at this point we can expect a working anyvm.py tool
-# Path to anyvm.py command (path resolved
+# Path to anyvm.py command (path resolved)
 ANYVM_BIN="$ANYVM_PY_PATH"
+
+printf "::endgroup::\n" ;  # end Setup-ANYVM
 
 # MARK: Speculative Pre-cacheing
 
@@ -438,6 +454,7 @@ fi
 	BAKED_PUB_CONTENT="<NULL>" ;
 	unset BAKED_PUB_CONTENT ;} 2>/dev/null || true ; # pub-key is only best effort
 
+printf "::group::%s\n" "Configure-ANYVM" ;
 
 #export IMAGE_PATH
 #printf '%s\n' "Image downloaded to $IMAGE_PATH"
@@ -503,6 +520,8 @@ VM_SSH_PORT="${VM_SSH_PORT:-55555}"
 debug_log "=> Selecting VM SSH port (--ssh-port \"$VM_SSH_PORT\")"
 START_ARGS+=(--ssh-port "${VM_SSH_PORT}")
 
+printf "::endgroup::\n";
+
 # TODO: make this more flexible via overrides and relative default
 # HEURISTIC abort after 1/100th (1%) of step max timeout
 # --boot-timeout-sec ( (($GITHUB_TIMEOUT * 60) / 100) )
@@ -515,17 +534,18 @@ python3 "$ANYVM_BIN" "${START_ARGS[@]}" ;
 debug_log "=> Waiting for Guest VM to become available"
 
 # wait_for_ssh: use nc if present, otherwise attempt ssh -o BatchMode test
-wait_for_ssh "$VM_SSH_HOST" "$VM_SSH_PORT" 360 || die "SSH did not become available on $VM_SSH_HOST:$VM_SSH_PORT"
+wait_for_ssh "$VM_SSH_HOST" "$VM_SSH_PORT" 360 || error_close_and_die "SSH did not become available on $VM_SSH_HOST:$VM_SSH_PORT"
 
 debug_log "Guest VM became available (on $VM_SSH_HOST:$VM_SSH_PORT)" ;
 
 printf "::endgroup::\n";
 
+printf "::group::%s\n" "Setup-Guest-SSH" ;
 debug_log "Refreshing VM keys" ;
 # 4. RSA-3072 ephemeral key generation with expiry comment
 # TODO: don't use date (birthday-weakness)
 EPHEM_KEY="${HOME:-.}/.ssh/id_ci_vm_ephemeral_$(safe_uuidgen)_rsa"
-ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -V -1m:+6h -C "ci-vm-ephemeral-$(date -u +%s)" >/dev/null || die "Failed to generate ephemeral keys"
+ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -V -1m:+6h -C "ci-vm-ephemeral-$(date -u +%s)" >/dev/null || error_close_and_die "Failed to generate ephemeral keys"
 
 debug_log "Checking for new ephemeral key pair"
 
@@ -563,16 +583,16 @@ if [ -f "$BAKED_PRIV" ]; then
 	debug_log "......=> Waiting for transfer" ;
 	EPHEM_PUB_TFILE=$(printf '%s\n' "$RANDOM$RANDOM$RANDOM$RANDOM" | openssl dgst -sha256 - | cut -d\= -f 2-2 | tr -d ' ' | head -n1)
 	mask_inputs "${EPHEM_PUB_TFILE}";
-	scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "$ROTATE_ROOT_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/rotate_root.sh || die "failed to scp rotate_root script"
-	scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "${EPHEM_KEY}.pub" root@"$VM_SSH_HOST":/tmp/"${EPHEM_PUB_TFILE}" || die "failed to scp rotate_root data"
+	scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "$ROTATE_ROOT_SCRIPT_PATH" root@"$VM_SSH_HOST":/tmp/rotate_root.sh || error_close_and_die "failed to scp rotate_root script"
+	scp $SSH_BAKED_OPTS -P $VM_SSH_PORT "${EPHEM_KEY}.pub" root@"$VM_SSH_HOST":/tmp/"${EPHEM_PUB_TFILE}" || error_close_and_die "failed to scp rotate_root data"
 
 	# TODO: cleanup local script copy once transferred
 	debug_log "....=> Transferred" & debug_log "..=> Waiting for rotation" ;
-	ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "sh /tmp/rotate_root.sh /tmp/${EPHEM_PUB_TFILE};" || die "warning: rotate_root execution failed" ;
+	ssh $SSH_BAKED_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "sh /tmp/rotate_root.sh /tmp/${EPHEM_PUB_TFILE};" || error_close_and_die "warning: rotate_root execution failed" ;
 	unset EPHEM_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
 	debug_log "..=> Rotated"
 else
-	die "warning: baked private key not available; cannot run remote rotation via baked key"
+	error_close_and_die "warning: baked private key not available; cannot run remote rotation via baked key"
 fi
 
 debug_log "=> Will now try ephemeral key pair"
@@ -586,10 +606,12 @@ for _step in 1 2 3; do
 	sleep 1
 done
 if [ $ok -ne 0 ]; then
-	die "warning: ephemeral key login failed; continuing with subsequent steps will fail"
+	error_close_and_die "warning: ephemeral key login failed; continuing with subsequent steps will fail"
 else
 	debug_log "Keys successfully rotated"
 fi
+
+printf "::endgroup::\n";
 
 # 4e. copy host /etc/hosts to guest (temp file) - best-effort
 debug_log "Bridging host file to guest"
