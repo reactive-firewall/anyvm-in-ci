@@ -10,6 +10,75 @@ on:
       - 'utils/*.sh'
       - '.github/workflows/Test.yml'
   workflow_dispatch:
+    inputs:
+      vm_os:
+        description: "Guest OS"
+        required: true
+        default: 'freebsd'
+        type: choice
+        options:
+          - freebsd
+          - ghostbsd
+          - openbsd
+          - netbsd
+          - dragonflybsd
+          - midnightbsd
+          - solaris
+          - omnios
+          - openindiana
+          - openindiana
+          - tribblix
+          - haiku
+          - ubuntu
+          - blissos
+      host_os:
+        description: "Host OS"
+        required: true
+        default: 'macos-26-intel'
+        type: choice
+        options:
+          - macos-26-intel
+          - macos-26
+          - macos-latest
+          - ubuntu-latest
+          - ubuntu-latest-arm
+          - windows-latest
+      memory:
+        description: "Memory size of the VM in MB"
+        # see https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories
+        type: number
+        options:
+          - 1024
+          - 2048
+          - 3072
+          - 4096  # limit of ubuntu-slim hosts
+          - 6144  # limit of macOS-{26,latest} hosts
+          - 8192
+          - 10240  # 10 GiB
+          - 12288  # 12 GiB
+          - 14336  # limit of macOS-*-intel hosts
+          - 16384  # limit of ubuntu-2* hosts
+          - 24576  # TODO: requires enabling 10 GB of host swap or detect large/custom runner
+          - 32768  # TODO: requires enabling 30 GB of host swap or detect large/custom runner
+          - 49152  # TODO: requires enabling 32 GB of host swap or detect large/custom runner
+          - 65536  # TODO: requires enabling 64 GB of host swap or detect large/custom runner
+          - 98304  # TODO: requires enabling 96 GB of host swap or detect large/custom runner
+          - 131072  # TODO: requires enabling 128 GB of host swap AND detect large runner
+        required: true
+        default: 3072
+      vm_arch:
+        description: "The CPU architecture of the VM (e.g., x86_64, aarch64)"
+        type: choice
+        options:
+          - x86_64
+          - aarch64 # arm64
+          - riscv64
+          - s390x  # experimental
+          - powerpc64
+          - ppc64le  # experimental
+          - sparc64  # experimental
+        required: false
+        default: null
 
 
 concurrency:
@@ -22,18 +91,17 @@ jobs:
   test-vm-lifecycle:
     permissions:
       contents: read
-    runs-on: macos-26-intel
+    runs-on: ${{ inputs.host_os || 'macos-26-intel' }}
     steps:
       - name: Build in VM (QEMU)
         id: build_vm
         if: ${{ !cancelled() && (github.repository == 'reactive-firewall/anyvm-in-ci') }}
         uses: reactive-firewall/anyvm-in-ci@master # WIP
         with:
-          osname: freebsd
-          # arch: x86_64
-          release: '15.1'
-          #name: ${{ env.VM_NAME }}
-          mem: 3072                # request 8GB RAM for the guest
+          osname: ${{ inputs.vm_os || 'freebsd' }}
+          arch: ${{ inputs.vm_arch || null }}
+          # release: '15.1'
+          mem: ${{ inputs.memory || 3072 }}                # request 8GB RAM for the guest
           sync: scp                # try using scp for sync (localhost scp)
           sync-time: true
           usesh: true

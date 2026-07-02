@@ -81,6 +81,7 @@ set -eu
 
 # MARK: load functions
 . "${ANYVM_UTIL_PATH_ARG:-.}/latest-vm-release.sh" ;
+. "${ANYVM_UTIL_PATH_ARG:-.}/latest-vm-builder.sh" ;
 . "${ANYVM_UTIL_PATH_ARG:-.}/expand-path-tilde.sh" ;
 
 # MARK: Inputs
@@ -91,7 +92,7 @@ ANYVM_ARCH="${INPUT_ARCH:-}"  # x86_64 / aarch64 / riscv64 / s390x / powerpc64 /
 ANYVM_MEM="${INPUT_MEM:-6144}"  # e.g., default to ((6*1024)*(1024*1024))/(1024*1024) MiB
 ANYVM_CPU="${INPUT_CPU:-1}"
 ANYVM_CPU_ARCH="${INPUT_CPU_ARCH:-}"  # optional VM specific CPU model
-ANYVM_VERSION="${ANYVM_VERSION:-2.1.8}"    # pin this per OS builder
+ANYVM_VERSION="${ANYVM_VERSION:-$(get_latest_vm_builder $ANYVM_OSNAME)}"    # pin this per OS builder
 ANYVM_SHA="7d20a921892ad49d4338dc4d9b641b496658cb78"  # v0.4.3
 ANYVM_CACHE_BASE="$(expand_tilde "${INPUT_CACHE_DIR:-${RUNNER_TOOL_CACHE:-/opt}/anyvm-cache}")"
 ANYVM_CACHE_DIR="$ANYVM_CACHE_BASE/anyvm-py/images"
