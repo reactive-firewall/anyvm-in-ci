@@ -81,10 +81,31 @@ get_latest_vm_builder() {
 
   fetch() {
     url=$1
+
+    case $url in
+      https://api.github.com/*)
+        auth_header=
+        if [ -n "${ANYVM_TOKEN:-${GH_TOKEN:-}}" ]; then
+          auth_header="Authorization: Bearer ${ANYVM_TOKEN:-${GH_TOKEN:-}}"
+        fi
+        ;;
+      *)
+        auth_header=
+        ;;
+    esac
+
     if command -v curl >/dev/null 2>&1; then
-      curl -fsL -H "Accept: application/vnd.github+json" --max-time 15 "$url" || return 1
+      if [ -n "$auth_header" ]; then
+        curl -fsL -H "Accept: application/vnd.github+json" -H "$auth_header" --max-time 15 "$url" || return 1
+      else
+        curl -fsL -H "Accept: application/vnd.github+json" --max-time 15 "$url" || return 1
+      fi
     elif command -v wget >/dev/null 2>&1; then
-      wget -qO- --timeout=15 "$url" || return 1
+      if [ -n "$auth_header" ]; then
+        wget -qO- --header="Accept: application/vnd.github+json" --header="$auth_header" --timeout=15 "$url" || return 1
+      else
+        wget -qO- --header="Accept: application/vnd.github+json" --timeout=15 "$url" || return 1
+      fi
     else
       return 1
     fi

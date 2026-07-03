@@ -81,10 +81,31 @@ get_stable_vm_release() {
 
   fetch() {
     url=$1
+
+    case $url in
+      https://api.github.com/*)
+        auth_header=
+        if [ -n "${ANYVM_TOKEN:-${GH_TOKEN:-}}" ]; then
+          auth_header="Authorization: Bearer ${ANYVM_TOKEN:-${GH_TOKEN:-}}"
+        fi
+        ;;
+      *)
+        auth_header=
+        ;;
+    esac
+
     if command -v curl >/dev/null 2>&1; then
-      curl -fsL -H "Accept: application/vnd.github+json" --max-time 15 "$url" || return 1
+      if [ -n "$auth_header" ]; then
+        curl -fsL -H "Accept: application/vnd.github+json" -H "$auth_header" --max-time 15 "$url" || return 1
+      else
+        curl -fsL -H "Accept: application/vnd.github+json" --max-time 15 "$url" || return 1
+      fi
     elif command -v wget >/dev/null 2>&1; then
-      wget -qO- --timeout=15 "$url" || return 1
+      if [ -n "$auth_header" ]; then
+        wget -qO- --header="Accept: application/vnd.github+json" --header="$auth_header" --timeout=15 "$url" || return 1
+      else
+        wget -qO- --header="Accept: application/vnd.github+json" --timeout=15 "$url" || return 1
+      fi
     else
       return 1
     fi
@@ -110,7 +131,7 @@ get_stable_vm_release() {
 
   gh_latest_release() {
     local repo_stub="$1"
-    gh_builder_releases "${repo_stub}" | grep -iEe "(.qemu|.qcow2.zst)" | grep -oiEe "[/]{1}[^/]+$" | cut -d- -f2-2 | cut -d. -f1-2 | (sort -V 2>/dev/null || sort) | tail -n1;
+    gh_builder_releases "${repo_stub}" | grep -iEe "(.qemu|.qcow2.zst)$" | grep -oiEe "[/]{1}[^/]+$" | cut -d- -f2-2 | sed -E 's#.*/[^-]+-([0-9]+(\.[0-9]+){1,2})(-.+)?\.(qemu|qcow2\.zst)$#\1#' | sed -E 's/\.(qemu|qcow2\.zst)$//' | (sort -V 2>/dev/null || sort) | tail -n1;
   }
 
   case "$name" in
