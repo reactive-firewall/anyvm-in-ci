@@ -153,8 +153,8 @@ USER_PUB="$(normalize_and_validate_input "${USER_PUB_IN:-}")"
 USERGROUP="${USERNAME:-runner}"
 USER_HOME_BASE_PATH=""
 if [ -d "/zroot" ]; then
-  if [ -d "/zroot" ]; then
-
+  if [ -d "/zroot/home" ]; then
+    USER_HOME_BASE_PATH="/zroot/home"
   fi;
 fi ;
 USER_HOME_BASE_PATH="${USER_HOME_BASE_PATH:-/home}"  # or could be '/Users'
