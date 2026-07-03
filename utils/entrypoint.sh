@@ -544,8 +544,10 @@ printf "::endgroup::\n";
 printf "::group::%s\n" "Setup-Guest-SSH" ;
 debug_log "Refreshing VM keys" ;
 # 4. RSA-3072 ephemeral key generation with expiry comment
+EPHEM_KEY_ID="vm_ephemeral_$(safe_uuidgen)"
+EPHEM_KEY="${HOME:-${PWD:-.}}/.ssh/id_ci_${EPHEM_KEY_ID:-vm_ephemeral_$$}_rsa"
+mask_inputs "${EPHEM_KEY_ID}";
 # TODO: don't use date (birthday-weakness)
-EPHEM_KEY="${HOME:-.}/.ssh/id_ci_vm_ephemeral_$(safe_uuidgen)_rsa"
 ssh-keygen -t "$EPHEM_KEY_TYPE" -b "$EPHEM_KEY_BITS" -f "$EPHEM_KEY" -N "" -V -1m:+6h -C "ci-vm-ephemeral-$(date -u +%s)" >/dev/null || error_close_and_die "Failed to generate ephemeral keys"
 
 debug_log "Checking for new ephemeral key pair"

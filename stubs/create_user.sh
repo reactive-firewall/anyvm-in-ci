@@ -147,6 +147,75 @@ normalize_and_validate_input() {
   printf '%s\n' "$in"
 }
 
+create_user() {
+  uname=$1
+  home=${2:-"$USER_HOME_BASE_PATH/$uname"}
+  shell=${3:-/bin/sh}
+
+  # user exists?
+  if id "$uname" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # create group first if needed
+  if ! getent group "$uname" >/dev/null 2>&1 2>/dev/null && ! grep -q "^$uname:" /etc/group 2>/dev/null; then
+    case "$(uname -s)" in
+      FreeBSD|DragonFly|NetBSD|OpenBSD|MidnightBSD)
+        command -v pw >/dev/null 2>&1 && pw groupadd "$uname" || true
+        ;;
+      Linux|SunOS|Darwin|Haiku)
+        command -v groupadd >/dev/null 2>&1 && groupadd "$uname" || true
+        ;;
+    esac
+  fi
+
+  case "$(uname -s)" in
+    FreeBSD|DragonFly|MidnightBSD)
+      pw useradd -n "$uname" -m -d "$home" -s "$shell" -g "$uname" -w none
+      ;;
+
+    NetBSD|OpenBSD)
+      # prefer useradd when present; fallback to adduser if that's what the system ships
+      if command -v useradd >/dev/null 2>&1; then
+        useradd -m -d "$home" -s "$shell" -g "$uname" "$uname"
+      else
+        adduser -D -H -s "$shell" -h "$home" "$uname"
+      fi
+      ;;
+
+    SunOS)
+      useradd -m -d "$home" -s "$shell" -g "$uname" "$uname"
+      ;;
+
+    Linux)
+      if command -v useradd >/dev/null 2>&1; then
+        useradd -m -d "$home" -s "$shell" -g "$uname" "$uname"
+      elif command -v adduser >/dev/null 2>&1; then
+        adduser -h "$home" -s "$shell" "$uname"
+      fi
+      ;;
+
+    Alpine)
+      adduser -D -H -h "$home" -s "$shell" -G "$uname" "$uname"
+      ;;
+
+    Darwin)
+      # macOS user creation is a different API; don't try to force useradd/pw here
+      dscl . -create "/Users/$uname" UserShell "$shell"
+      dscl . -create "/Users/$uname" NFSHomeDirectory "$home"
+      dscl . -create "/Users/$uname" PrimaryGroupID 20
+      dscl . -create "/Users/$uname" UniqueID "$(
+        id -u 2>/dev/null || echo 500
+      )"
+      ;;
+
+    Haiku)
+      printf "%s\n" "::warning::Haiku user management is limited; often there is only the default user." >&2
+      return 1
+      ;;
+  esac
+}
+
 debug_remote_log "Syncing user to VM" ;
 # Normalize input public key (blob or file-path)
 USER_PUB="$(normalize_and_validate_input "${USER_PUB_IN:-}")"
@@ -168,17 +237,12 @@ unset USER_PUB_IN 2>/dev/null || true ;
 if ! id "$USERNAME" >/dev/null 2>&1; then
   # create user
   debug_remote_log "Creating empty user ($USERNAME)" ;
-  if command -v useradd >/dev/null 2>&1; then
-    useradd -m -g "$USERGROUP" -s /bin/sh "$USERNAME" || true
-  elif command -v adduser >/dev/null 2>&1; then
-    _USER_TMP_DATA_FILE="./runner_$$.tmp"
-    printf '%s::::::%s:%s/%s:/bin/sh:\n' "$USERNAME" "$USERNAME" "$USER_HOME_BASE_PATH" "$USERNAME" > "$_USER_TMP_DATA_FILE" || printf "::warning:: %s\n" "Failed to generate user ${USERNAME:-} data file" >&2;
-    adduser -s /bin/sh -w none -f $_USER_TMP_DATA_FILE || printf "::error:: %s\n" "Error: Failed to create user ${USERNAME:-}" >&2;
-    pw user show "$USERNAME" || printf "::error:: %s\n" "Error: Failed to verify user ${USERNAME:-} was created" >&2;
-    rm -f "${_USER_TMP_DATA_FILE:-}" 2>/dev/null || printf "::warning:: %s\n" "Failed to remove user ${USERNAME:-} data file" >&2;
-  elif command -v pw >/dev/null 2>&1; then
-    # FreeBSD: set default group (-g) to the new group
-    pw useradd -n "$USERNAME" -m -s /bin/sh -g "$USERGROUP" -w none || true
+  create_user "$USERNAME" "$USER_HOME_BASE_PATH/$USERNAME" ;
+  if id "$uname" >/dev/null 2>&1; then
+    debug_remote_log "=>Created user" ;
+  else
+    printf "::error title='NO-USER':: %s\n" "Failed to ensure a user was provisioned." >&2
+    exit 1
   fi
 fi
 
