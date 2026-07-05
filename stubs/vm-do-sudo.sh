@@ -332,7 +332,7 @@ ensure_sudoers_rule() {
       die_stub "sudoers validation failed" ;  # still fail on successful restore
     fi
   else
-    die_stub "Could not update sudoers at all" ;
+    die_stub "Could not validate updates to sudoers at all (missing visudo)" ;
   fi
 }
 
