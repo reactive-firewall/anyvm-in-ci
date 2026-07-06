@@ -160,7 +160,7 @@ add_user_to_admin_group() {
 
   if command -v usermod >/dev/null 2>&1; then
     getent group "$GROUP" >/dev/null 2>&1 || groupadd "$GROUP" >/dev/null 2>&1 || true
-    usermod -aG "$GROUP" "$USER_NAME" >/dev/null 2>&1 || die_stub "User promotion to sudo failed" ;
+    usermod -aG "$GROUP" "$USER_NAME" >/dev/null 2>&1 || usermod -G "$GROUP" "$USER_NAME" >/dev/null 2>&1 || die_stub "User promotion to sudo failed" ;
     return 0
   fi
 
