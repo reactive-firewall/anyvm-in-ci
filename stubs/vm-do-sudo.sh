@@ -277,7 +277,8 @@ ensure_sudoers_rule() {
     # shellcheck disable=SC2059
     printf "%s\n" "$RULE" > "$tmp"
     chmod 0440 "$tmp" >/dev/null 2>&1 || die_stub "sudoers could not be chmoded" ;
-    mv "$tmp" "$FILE"  # might cause non-fatal warnings with early cleanup
+    chmod 600 "$FILE" >/dev/null 2>&1 || die_stub "sudoers could not be un-chmoded (for updates)" ;
+    mv -f "$tmp" "$FILE" || die_stub "sudoers could not be updated" ; # overwrite into-place
     chmod 0440 "$FILE" >/dev/null 2>&1 || true ;
     # early cleanup
     { chmod 600 "$tmp" >/dev/null 2>&1 || true ;
