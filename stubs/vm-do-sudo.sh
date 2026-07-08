@@ -277,7 +277,9 @@ ensure_sudoers_rule() {
     # shellcheck disable=SC2059
     printf "%s\n" "$RULE" > "$tmp"
     chmod 0440 "$tmp" >/dev/null 2>&1 || die_stub "sudoers could not be chmoded" ;
-    chmod 600 "$FILE" >/dev/null 2>&1 || die_stub "sudoers could not be un-chmoded (for updates)" ;
+    if [ -e "$FILE" ] ; then
+        chmod 600 "$FILE" >/dev/null 2>&1 || die_stub "sudoers could not be un-chmoded (for updates)" ;
+    fi ; # otherwise nothing to un-chmod
     mv -f "$tmp" "$FILE" || die_stub "sudoers could not be updated" ; # overwrite into-place
     chmod 0440 "$FILE" >/dev/null 2>&1 || true ;
     # early cleanup
@@ -292,7 +294,7 @@ ensure_sudoers_rule() {
   fi
 
   # Fallback: /etc/sudoers direct edit (least preferred)
-  printf '::warning::%s\n' "No etc/sudoers.d directory; falling back to appending to /etc/sudoers."
+  printf "::warning title='SUDO-FLAT-CONFIG'::%s\n" "No etc/sudoers.d directory; falling back to appending to /etc/sudoers."
   SUDOERS="/etc/sudoers"
   if [ -f "/usr/local/etc/sudoers" ]; then
     # should use /usr/local/etc/* paths in this case (e.g., freebsd 15+)
