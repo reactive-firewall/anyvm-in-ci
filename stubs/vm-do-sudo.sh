@@ -121,6 +121,7 @@ install_sudo() {
     if command -v pkgin >/dev/null 2>&1; then
       pkgin -y install sudo >/dev/null 2>&1 && return 0
     fi
+    printf '%s\n' "No supported installer path found for this OS/image ($OS)." >&2
   fi
 
   if printf '%s\n' "$OS" | grep -Eq 'SunOS'; then
@@ -339,9 +340,28 @@ ensure_sudoers_rule() {
   fi
 }
 
+verify_has_sudo() {
+  # assumes running as root and sudo must be in path to succeed
+  if command -v sudo >/dev/null 2>&1; then
+    return 0
+  fi
+  if printf '%s\n' "$OS" | grep -Eq 'FreeBSD|GhostBSD|DragonFly|MidnightBSD|NetBSD|OpenBSD|Bitrig'; then
+    if which sudo >/dev/null 2>&1; then
+      return 0
+    fi
+  else
+    printf "::debug::%s\n" "Testing for sudo (via which):" ;
+    if which sudo >/dev/null 2>&1; then
+      printf "::debug::=> %s\n" "Found!" ;
+      return 0
+    fi
+  fi
+  sudo -V 2>/dev/null >/dev/null || return 1 ;
+}
+
 main() {
   install_sudo
-  sudo -V >/dev/null 2>&1 || die_stub "No supported sudo detected on this OS/image. Did you install sudo manually?" ;
+  verify_has_sudo >/dev/null 2>&1 || die_stub "No supported sudo detected on this OS/image. Did you install sudo manually?" ;
   add_user_to_admin_group
   ensure_sudoers_rule
 
