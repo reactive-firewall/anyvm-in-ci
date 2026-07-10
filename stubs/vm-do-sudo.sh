@@ -116,7 +116,7 @@ install_sudo() {
     fi
     # Some older/variants: pkg_add / pkgin
     if command -v pkg_add >/dev/null 2>&1; then
-      pkg_add sudo >/dev/null 2>&1 && return 0
+      pkg_add -I sudo >/dev/null 2>&1 && return 0
     fi
     if command -v pkgin >/dev/null 2>&1; then
       pkgin -y install sudo >/dev/null 2>&1 && return 0
@@ -139,7 +139,7 @@ install_sudo() {
     apt-get install -y sudo >/dev/null 2>&1 && return 0
   fi
 
-  printf '%s\n' "No supported sudo installer detected on this OS/image ($OS). Install sudo manually." >&2
+  printf '::warning:: %s\n' "No supported sudo installer detected on this OS/image ($OS). Install sudo manually." >&2
   return 1
 }
 
@@ -341,6 +341,7 @@ ensure_sudoers_rule() {
 
 main() {
   install_sudo
+  sudo -V || die_stub "No supported sudo detected on this OS/image. Did you install sudo manually?" ;
   add_user_to_admin_group
   ensure_sudoers_rule
 
