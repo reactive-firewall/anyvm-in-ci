@@ -1,0 +1,54 @@
+# .github/workflows/Test-utils-builder-fetching.yml
+---
+name: Test latest-vm-builder utility
+on:  # yamllint disable-line rule:truthy
+  push:
+    branches:
+      - '*'
+    paths:
+      - 'action.yml'
+      - 'utils/latest-vm-builder.sh'
+      - '.github/workflows/Test-utils-builder-fetching.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}  # Setting default permissions to none for enhanced security
+
+jobs:
+  test-latest-vm-builder-util:
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.host_os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host_os: [macos-26-intel, macos-26, macos-latest, ubuntu-latest, ubuntu-latest-arm, windows-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+          submodules: false
+          repository: 'reactive-firewall/anyvm-in-ci'
+          sparse-checkout: 'utils/latest-vm-builder.sh'
+      - id: exercise-latest-vm-builder-util
+        name: Test latest-vm-builder on ${{ runner.os }}
+        if: ${{ !cancelled() && (github.repository == 'reactive-firewall/anyvm-in-ci') }}
+        shell: bash
+        run: |
+          # exercise latest-vm-builder
+          if [[ -f utils/latest-vm-builder.sh ]] ; then
+            printf "::debug::%s\n" "Found utils/latest-vm-builder.sh" ;
+            [[ -x utils/latest-vm-builder.sh ]] || chmod +x utils/latest-vm-builder.sh ;
+            for SOME_T_OS in 'freebsd' 'ghostbsd' 'openbsd' 'netbsd' 'dragonflybsd' 'midnightbsd' 'solaris' 'omnios' 'openindiana' 'tribblix' 'haiku' 'ubuntu' 'blissos' ; do
+              printf "::debug::%s\n" "Exercising utils/latest-vm-builder.sh ${SOME_T_OS}" ;
+              utils/latest-vm-builder.sh "${SOME_T_OS:-}" || exit 1 ;
+            done;
+          else
+            printf "::debug::%s\n" "Could not find a testable utils/latest-vm-builder.sh" ;
+            exit 126 ;
+          fi;
+          exit 0 ;
