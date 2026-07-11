@@ -341,7 +341,7 @@ ensure_sudoers_rule() {
 
 main() {
   install_sudo
-  sudo -V || die_stub "No supported sudo detected on this OS/image. Did you install sudo manually?" ;
+  sudo -V >/dev/null 2>&1 || die_stub "No supported sudo detected on this OS/image. Did you install sudo manually?" ;
   add_user_to_admin_group
   ensure_sudoers_rule
 
