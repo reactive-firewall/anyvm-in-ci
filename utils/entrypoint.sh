@@ -93,7 +93,7 @@ ANYVM_MEM="${INPUT_MEM:-6144}"  # e.g., default to ((6*1024)*(1024*1024))/(1024*
 ANYVM_CPU="${INPUT_CPU:-1}"
 ANYVM_CPU_ARCH="${INPUT_CPU_ARCH:-}"  # optional VM specific CPU model
 ANYVM_VERSION="${ANYVM_VERSION:-$(get_latest_vm_builder $ANYVM_OSNAME)}"    # pin this per OS builder
-ANYVM_SHA="7d20a921892ad49d4338dc4d9b641b496658cb78"  # v0.4.3
+ANYVM_SHA="3cca386905e9f843270f3a80101c3adb50dd9e5e"  # v0.5.0
 ANYVM_CACHE_BASE="$(expand_tilde "${INPUT_CACHE_DIR:-${RUNNER_TOOL_CACHE:-/opt}/anyvm-cache}")"
 ANYVM_CACHE_DIR="$ANYVM_CACHE_BASE/anyvm-py/images"
 INPUT_DATA_DIR="${INPUT_DATA_DIR:-data}"
@@ -230,8 +230,8 @@ install_qemu(){
 			;;
 		Darwin)
 			if command -v brew >/dev/null 2>&1; then
-				# TODO: set other hombrew vars like HOMEBREW_NO_ANALYTICS when cache mode is disabled
-				# TODO: set other hombrew vars when cache mode is enabled (and configure GHA cache for brew)
+				# TODO: set other homebrew vars like HOMEBREW_NO_ANALYTICS when cache mode is disabled
+				# TODO: set other homebrew vars when cache mode is enabled (and configure GHA cache for brew)
 				if [ "${DEBUG}" -eq 1 ]; then export HOMEBREW_VERBOSE=${DEBUG}; else export HOMEBREW_NO_ENV_HINTS=1; fi ;
 				export HOMEBREW_NO_INSECURE_REDIRECT=1;  # forbid redirects from secure HTTPS to insecure HTTP
 				HOMEBREW_GITHUB_API_TOKEN="${ANYVM_TOKEN:-${GH_TOKEN:-}}" brew install qemu || error_close_and_die "failed to install qemu via homebrew" ;
@@ -423,7 +423,7 @@ for ext in "qcow2.zst" "qemu"; do
 		if [ -n "${IMAGE_PATH}" ] && [ -f "${IMAGE_PATH}" ]; then
 			continue ;
 		else
-			IMAGE_PATH="$cand"; chmod 644 "$IMAGE_PATH" || true;
+			IMAGE_PATH="$cand"; chmod 640 "$IMAGE_PATH" || true;
 		fi ;
 	fi ;
 done ;
