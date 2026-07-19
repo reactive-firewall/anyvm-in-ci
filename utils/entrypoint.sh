@@ -94,6 +94,7 @@ ANYVM_CPU="${INPUT_CPU:-1}"
 ANYVM_CPU_ARCH="${INPUT_CPU_ARCH:-}"  # optional VM specific CPU model
 ANYVM_VERSION="${ANYVM_VERSION:-$(get_latest_vm_builder $ANYVM_OSNAME)}"    # pin this per OS builder
 ANYVM_SHA="3a6ae462f0fb91011b3af2ed64335f104a8ad1bb"  # v0.5.1
+ANYVM_DISABLE_CACHE="${INPUT_DISABLE_CACHE:-false}"
 ANYVM_CACHE_BASE="$(expand_tilde "${INPUT_CACHE_DIR:-${RUNNER_TOOL_CACHE:-/opt}/anyvm-cache}")"
 ANYVM_CACHE_DIR="$ANYVM_CACHE_BASE/anyvm-py/images"
 INPUT_DATA_DIR="${INPUT_DATA_DIR:-data}"
@@ -323,7 +324,7 @@ debug_log "=> Defined" ;
 debug_log "Checking for Required tools" ;
 
 # 0. minimal required tools
-required=(python3 curl cut git openssl ssh scp ssh-keygen tr date mktemp chmod mkdir sed awk)
+required=(python3 curl cut git openssl ssh scp ssh-keygen ssh-keyscan tr date mktemp chmod mkdir sed awk)
 for cmd in "${required[@]}"; do
 	debug_log "=> Checking for \"$cmd\"" ;
 	if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -612,6 +613,14 @@ if [ $ok -ne 0 ]; then
 	error_close_and_die "warning: ephemeral key login failed; continuing with subsequent steps will fail"
 else
 	debug_log "Keys successfully rotated"
+	# TODO: cache guest's host key ... E.G.,
+	#	if matches "$ANYVM_DISABLE_CACHE" "true" ; then
+	#		debug_log "Ignoring guest's host keys"
+	#		SSH_EPHEMERAL_OPTS="$SSH_EPHEMERAL_OPTS -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" ;
+	#	else
+	#		debug_log "Adding guest's host keys to known hosts"
+	#		ssh-keyscan -p $VM_SSH_PORT -t rsa,ed25519 "$VM_SSH_HOST" >> ~/.ssh/known_hosts
+	#	fi ;
 fi
 
 printf "::endgroup::\n";

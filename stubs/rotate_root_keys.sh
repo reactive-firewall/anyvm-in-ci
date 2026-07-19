@@ -169,6 +169,9 @@ tmp_root="$(mktemp /root/.ssh/auth.XXXXXX)"
 printf '%s\n' "$NEW_PUB" > "$tmp_root"
 chmod 600 "$tmp_root"
 mv "$tmp_root" /root/.ssh/authorized_keys || true
+
+# TODO: host-key's rotation
+
 # reload sshd safely (try multiple names)
 # Try commands safely: run "$@" and return 0/1 (no exit)
 _try() {
