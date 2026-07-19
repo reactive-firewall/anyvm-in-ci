@@ -31,7 +31,7 @@ jobs:
           - architecture: amd64
             runner: ubuntu-latest
           - architecture: arm64
-            runner: ubuntu-latest-arm
+            runner: ubuntu-26.04-arm
           - architecture: amd64
             runner: windows-latest
     runs-on: ${{ matrix.runner }}
