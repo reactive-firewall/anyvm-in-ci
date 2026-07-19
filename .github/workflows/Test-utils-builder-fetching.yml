@@ -20,11 +20,21 @@ jobs:
   test-latest-vm-builder-util:
     permissions:
       contents: read
-    runs-on: ${{ matrix.host_os }}
     strategy:
       fail-fast: false
       matrix:
-        host_os: [macos-26-intel, macos-26, macos-latest, ubuntu-latest, ubuntu-latest-arm, windows-latest]
+        include:
+          - architecture: amd64
+            runner: macos-26-intel
+          - architecture: arm64
+            runner: macos-latest
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-latest-arm
+          - architecture: amd64
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
