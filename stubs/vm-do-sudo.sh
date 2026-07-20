@@ -102,40 +102,56 @@ OS="$(uname -s 2>/dev/null || echo unknown)"
 # helper: fail with message
 die_stub(){ printf "::error title='ERROR':: %s\n" "$*" >&2; exit 1; }
 
+# helper: conditional diagnostic with message
+# note uses 4 dots and arrow indentation on guest to visually stand out here
+debug_remote_log(){ if [ "${DEBUG:-0}" -eq 1 ]; then printf '::debug::....=> %s\n' "$*" ; fi; }
+
 install_sudo() {
   if command -v sudo >/dev/null 2>&1; then
+    debug_remote_log "Found sudo already installed on guest." ;
     return 0
   fi
-
+  debug_remote_log "Could not find sudo installed on guest. Will try to install." ;
   printf '%s\n' "Installing sudo on: $OS"
 
   if printf '%s\n' "$OS" | grep -Eq 'FreeBSD|GhostBSD|DragonFly|MidnightBSD|NetBSD|OpenBSD|Bitrig'; then
+    debug_remote_log "Will try BSD-like pkg tools..." ;
     # FreeBSD/DragonFly: pkg
     if command -v pkg >/dev/null 2>&1; then
-      pkg install -y sudo >/dev/null 2>&1 && return 0
+      debug_remote_log "Selected 'pkg' tool" ;
+      # TODO: re-add ">/dev/null 2>&1" style convention
+      pkg install -y sudo && return 0
     fi
     # Some older/variants: pkg_add / pkgin
     if command -v pkg_add >/dev/null 2>&1; then
-      pkg_add -I sudo >/dev/null 2>&1 && return 0
+      debug_remote_log "Selected 'pkg_add' tool" ;
+      # TODO: re-add ">/dev/null 2>&1" style convention
+      pkg_add -I sudo && return 0
     fi
     if command -v pkgin >/dev/null 2>&1; then
-      pkgin -y install sudo >/dev/null 2>&1 && return 0
+      debug_remote_log "Selected 'pkgin' tool" ;
+      # TODO: re-add ">/dev/null 2>&1" style convention
+      pkgin -y install sudo && return 0
     fi
-    printf '%s\n' "No supported installer path found for this OS/image ($OS)." >&2
+    printf '::warning:: %s\n' "No supported installer path found for this OS/image ($OS)." >&2
   fi
 
   if printf '%s\n' "$OS" | grep -Eq 'SunOS'; then
+    debug_remote_log "Will try SunOS-like pkg tools..." ;
     # illumos/OpenIndiana: IPS/pkgs vary; try common pkg(1) paths if present.
     if command -v pkg >/dev/null 2>&1; then
+      debug_remote_log "Selected 'pkg' tool" ;
       pkg install -y system/sudo >/dev/null 2>&1 || pkg install -y sudo >/dev/null 2>&1 || true
       command -v sudo >/dev/null 2>&1 && return 0
     fi
-    printf '%s\n' "No supported installer path found for SunOS/Solaris image." >&2
+    printf '::warning:: %s\n' "No supported installer path found for SunOS/Solaris image." >&2
     return 1
   fi
 
+  debug_remote_log "Searching for other package management tools..."
   if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
+    debug_remote_log "Selected 'apt-get' tool" ;
     apt-get update >/dev/null 2>&1 || true
     apt-get install -y sudo >/dev/null 2>&1 && return 0
   fi
@@ -149,6 +165,10 @@ detect_admin_group() {
     printf '%s\n' "sudo";
   elif [ -f /etc/group ] && grep -q '^wheel:' /etc/group 2>/dev/null; then
     printf '%s\n' "wheel";
+  elif [ -f /etc/group ] && grep -q '^sudoers:' /etc/group 2>/dev/null; then
+    printf '%s\n' "sudoers";
+  elif [ -f /etc/group ] && grep -q '^sudo:' /etc/group 2>/dev/null; then
+    printf '%s\n' "sudo";
   else
     printf '%s\n' "wheel";
   fi
@@ -350,17 +370,23 @@ verify_has_sudo() {
       return 0
     fi
   else
-    printf "::debug::%s\n" "Testing for sudo (via which):" ;
+    debug_remote_log "Testing for sudo (via which):" ;
     if which sudo >/dev/null 2>&1; then
-      printf "::debug::=> %s\n" "Found!" ;
+      printf "::debug::......=> %s\n" "Found!" ;
       return 0
     fi
+    printf "::debug::......=> %s\n" "Not Found!" ;
   fi
+  debug_remote_log "Will attempt to invoke sudo as last resort." ;
+  # TODO: harden this check more for CI/CD via additional search path limitations
   sudo -V 2>/dev/null >/dev/null || return 1 ;
 }
 
 main() {
+  debug_remote_log "Setting up sudo" ;
   install_sudo
+  # Hint: hook in here to support other OS/Images by installing sudo manually
+  debug_remote_log "Checking sudo is now available" ;
   verify_has_sudo >/dev/null 2>&1 || die_stub "No supported sudo detected on this OS/image. Did you install sudo manually?" ;
   add_user_to_admin_group
   ensure_sudoers_rule

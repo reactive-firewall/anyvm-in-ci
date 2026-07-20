@@ -282,6 +282,10 @@ detect_admin_group() {
     printf '%s\n' "sudo";
   elif [ -f /etc/group ] && grep -q '^wheel:' /etc/group 2>/dev/null; then
     printf '%s\n' "wheel";
+  elif [ -f /etc/group ] && grep -q '^sudoers:' /etc/group 2>/dev/null; then
+    printf '%s\n' "sudoers";
+  elif [ -f /etc/group ] && grep -q '^sudo:' /etc/group 2>/dev/null; then
+    printf '%s\n' "sudo";
   else
     printf '%s\n' "wheel";
   fi
