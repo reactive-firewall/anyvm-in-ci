@@ -82,6 +82,8 @@ if [ ! -w "$SSHD_CONFIG" ]; then
     exit 1
 fi
 
+OS="$(uname -s 2>/dev/null || echo unknown)"
+
 # 2. Create a working copy (preserves permissions)
 cp -p "$SSHD_CONFIG" "$TMP_CONFIG" 2>/dev/null || cp "$SSHD_CONFIG" "$TMP_CONFIG"
 
@@ -105,6 +107,12 @@ set_ssh_config() {
         # If it exists but has a different value, replace only that specific variable line
         # This regex looks for SetEnv followed by the variable name (e.g., LD_PRELOAD)
         var_name=$(printf '%s' "$value" | cut -d= -f1)
+        if printf '%s\n' "$OS" | grep -Eq 'OpenBSD'; then
+            if printf '%s\n' "$var_name" | grep -Eq 'LD_PRELOAD'; then
+                printf "::debug::%s\n" "Skipping: Unsupported setting on the guest" ;
+                return 0
+            fi
+        fi
         if grep -q "^[[:space:]]*SetEnv[[:space:]]*$var_name=" "$TMP_CONFIG"; then
             sed "s|^[[:space:]]*SetEnv[[:space:]]*$var_name=.*|$full_setting|" "$TMP_CONFIG" > "$TMP_CONFIG.bak"
             mv "$TMP_CONFIG.bak" "$TMP_CONFIG"
@@ -121,7 +129,7 @@ set_ssh_config() {
             printf '\n%s\n' "$full_setting" >> "$TMP_CONFIG"
         fi
     fi
-    printf "::debug::%s\n" "Applied: $full_setting"
+    printf "::debug::%s\n" "Applied: $full_setting" ;
 }
 
 # 3. Apply General Hardening (Including former TODOs)
@@ -132,7 +140,7 @@ IgnoreUserKnownHosts yes
 RekeyLimit default 1h30m
 X11Forwarding no
 AuthenticationMethods publickey
-LoginGraceTime 30
+LoginGraceTime 5
 MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
 MaxStartups 6:20:24
 SetEnv LD_PRELOAD=
@@ -156,6 +164,7 @@ printf "::debug::%s\n" "SSHD hardening complete. (will restart sshd)"
 
 # do some cleanup first
 unset settings
+unset OS
 unset TMP_CONFIG
 unset set_ssh_config 2>/dev/null || true
 
