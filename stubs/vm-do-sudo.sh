@@ -119,19 +119,23 @@ install_sudo() {
     # FreeBSD/DragonFly: pkg
     if command -v pkg >/dev/null 2>&1; then
       debug_remote_log "Selected 'pkg' tool" ;
-      # TODO: re-add ">/dev/null 2>&1" style convention
-      pkg install -y sudo && return 0
+      pkg install -y sudo >/dev/null 2>&1 && return 0
     fi
     # Some older/variants: pkg_add / pkgin
     if command -v pkg_add >/dev/null 2>&1; then
       debug_remote_log "Selected 'pkg_add' tool" ;
-      # TODO: re-add ">/dev/null 2>&1" style convention
-      pkg_add -I sudo && return 0
+      if printf '%s\n' "$OS" | grep -Eq 'OpenBSD'; then
+        # TODO: fetch OpenBSD latest version by parsing something like:
+        # https://cloudflare.cdn.openbsd.org/pub/OpenBSD/{OS_RELEASE}/packages/{ISA}/
+        _OPEN_BSD_VERSION="1.9.17.2p1"
+        pkg_add -I sudo-$_OPEN_BSD_VERSION >/dev/null 2>&1 && return 0
+      else
+        pkg_add -I sudo >/dev/null 2>&1 && return 0
+      fi
     fi
     if command -v pkgin >/dev/null 2>&1; then
       debug_remote_log "Selected 'pkgin' tool" ;
-      # TODO: re-add ">/dev/null 2>&1" style convention
-      pkgin -y install sudo && return 0
+      pkgin -y install sudo >/dev/null 2>&1 && return 0
     fi
     printf '::warning:: %s\n' "No supported installer path found for this OS/image ($OS)." >&2
   fi
