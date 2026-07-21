@@ -211,6 +211,21 @@ runs:
         key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release || 'ANY' }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
         restore-keys: |
           ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release || 'ANY' }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-
+    - name: Shared Host Cache
+      if: ${{ inputs.disable-cache != true }}
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          /usr/local/Cellar/capstone/
+          /usr/local/Cellar/dtc/
+          /usr/local/Cellar/libslirp/
+          /usr/local/Cellar/libssh/
+          /usr/local/Cellar/ncurses/
+          /usr/local/Cellar/snappy/
+          /usr/local/Cellar/vde/
+        key: ANYVM-IN-CI-${{ runner.os }}-host-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ github.sha }}
+        restore-keys: |
+          ANYVM-IN-CI-${{ runner.os }}-host-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-
     - name: "Validate inputs and run anyvm"
       id: anyvm-entrypoint
       shell: bash

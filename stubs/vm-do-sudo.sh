@@ -366,6 +366,7 @@ ensure_sudoers_rule() {
   # Validate sudoers if visudo exists
   if command -v visudo >/dev/null 2>&1; then
     if ! visudo -c >/dev/null 2>&1; then
+      if [ "${DEBUG:-0}" -eq 1 ]; then visudo -c || true ; fi ;
       if [ -f "$SUDOERS_BACKUP_PATH" ]; then
         mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
       fi

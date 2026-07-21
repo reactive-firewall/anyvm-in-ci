@@ -231,7 +231,9 @@ install_qemu(){
 			;;
 		Darwin)
 			if command -v brew >/dev/null 2>&1; then
-				# TODO: set other homebrew vars like HOMEBREW_NO_ANALYTICS when cache mode is disabled
+				# Best effort warning suppression about aws/tap
+				brew untap aws/tap >/dev/null 2>&1 || true ;  # unused and untrusted
+				if matches "$ANYVM_DISABLE_CACHE" "true" ; then export HOMEBREW_NO_ANALYTICS=1; fi ;
 				# TODO: set other homebrew vars when cache mode is enabled (and configure GHA cache for brew)
 				if [ "${DEBUG}" -eq 1 ]; then export HOMEBREW_VERBOSE=${DEBUG}; else export HOMEBREW_NO_ENV_HINTS=1; fi ;
 				export HOMEBREW_NO_INSECURE_REDIRECT=1;  # forbid redirects from secure HTTPS to insecure HTTP
