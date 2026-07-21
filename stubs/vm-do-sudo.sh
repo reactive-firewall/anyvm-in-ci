@@ -201,6 +201,7 @@ add_user_to_admin_group() {
 }
 
 ensure_sudoers_rule() {
+  debug_remote_log "Gathering configuration details" ;
   # Prefer sudoers.d include
   SUDOERS_D="/etc/sudoers.d"
   if [ -f "/usr/local/etc/sudoers" ]; then
@@ -211,6 +212,8 @@ ensure_sudoers_rule() {
 
   # Determine admin group name (wheel/sudo)
   GROUP=$(detect_admin_group)
+
+  debug_remote_log "Generating configuration and rules" ;
 
   # NOPASSWD policy
   if [ "$MODE" = "1" ]; then
@@ -302,10 +305,13 @@ ensure_sudoers_rule() {
     printf "::warning title='SUDO-INTERACTIVE'::%s\n" "Interactive mode for sudo is intended for testing interactively, and can cause hangs when run in headless CI pipelines.";
   fi
 
+  debug_remote_log "Configuring" ;
+
   # If /etc/sudoers.d exists, use it.
   if [ -d "$SUDOERS_D" ]; then
     # e.g., can assume mkdir -p "$SUDOERS_D" >/dev/null 2>&1 || true
     umask 022
+    debug_remote_log "Selected trivial auto-config strategy" ;
     # Write rule atomically if possible
     tmp="${FILE}.tmp.$$"
     # If MODE=2 and whitelist exists, RULE may contain newlines; preserve them.
@@ -330,8 +336,10 @@ ensure_sudoers_rule() {
   fi
 
   unset FILE
+  debug_remote_log "Unable to select trivial auto-config strategy" ;
   # Fallback: /etc/sudoers direct edit (least preferred)
   printf "::warning title='SUDO-FLAT-CONFIG'::%s\n" "No etc/sudoers.d directory; falling back to appending to /etc/sudoers."
+  debug_remote_log "Looking for any current config to backup" ;
   SUDOERS="/etc/sudoers"
   if [ -f "/usr/local/etc/sudoers" ]; then
     # should use /usr/local/etc/* paths in this case (e.g., freebsd 15+)
@@ -340,8 +348,10 @@ ensure_sudoers_rule() {
   SUDOERS_BACKUP_PATH="$SUDOERS.bak.$(date +%s)"
   SUDOERS_FAILSAFE="/root/sudoers.failsafe"
   if [ -f "$SUDOERS" ]; then
+    debug_remote_log "Attempting backup" ;
     cp -fp "$SUDOERS" "${SUDOERS_BACKUP_PATH}" >/dev/null 2>&1 || die_stub "Could not backup old sudoers" ;
   else
+    debug_remote_log "Unable to auto-backup. Perhaps we can use a failsafe config?" ;
     chmod 440 "$SUDOERS_FAILSAFE" || die_stub "Could not restrict failsafe sudoers" ;
     chown 0 "$SUDOERS_FAILSAFE" || die_stub "Could not chown failsafe sudoers" ;
     cp -fp "$SUDOERS_FAILSAFE" "${SUDOERS}" >/dev/null 2>&1 || die_stub "Could not use failsafe sudoers" ;
@@ -350,6 +360,8 @@ ensure_sudoers_rule() {
   # early cleanup
     { chmod 600 "$SUDOERS_FAILSAFE" >/dev/null 2>&1 || die_stub "Failsafe sudoers could not be un-chmoded (for cleanup)" ;
       rm -f "$SUDOERS_FAILSAFE" >/dev/null 2>&1 || die_stub "Failsafe sudoers could not cleaned up" ;}
+
+  debug_remote_log "Selected direct append-config strategy" ;
   if chmod 600 "${SUDOERS}" >/dev/null 2>&1; then
     if [ -f "$SUDOERS" ]; then
       if ! printf '%s\n' "$RULE" >> "$SUDOERS"; then
@@ -357,17 +369,22 @@ ensure_sudoers_rule() {
         die_stub "Could not update sudoers" ;
       fi
     else
+      debug_remote_log "Unable to select direct append-config strategy" ;
+      debug_remote_log "Selected last-resort full-config strategy instead" ;
       if ! printf '%s\n' "$RULE" > "$SUDOERS"; then
         die_stub "Could not update sudoers" ;
       fi
     fi
     chmod 440 "${SUDOERS}" >/dev/null 2>&1 || die_stub "sudoers could not be un-chmoded (for cleanup)";
   fi;
+  debug_remote_log "Attempting validate updates to sudoers" ;
   # Validate sudoers if visudo exists
   if command -v visudo >/dev/null 2>&1; then
+    debug_remote_log "Selected 'visudo' tool" ;
     if ! visudo -c >/dev/null 2>&1; then
       if [ "${DEBUG:-0}" -eq 1 ]; then visudo -c || true ; fi ;
       if [ -f "$SUDOERS_BACKUP_PATH" ]; then
+        debug_remote_log "Attempting to restore from backup" ;
         mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
       fi
       die_stub "sudoers validation failed" ;  # still fail on successful restore

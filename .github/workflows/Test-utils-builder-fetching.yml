@@ -53,7 +53,7 @@ jobs:
           if [[ -f utils/latest-vm-builder.sh ]] ; then
             printf "::debug::%s\n" "Found utils/latest-vm-builder.sh" ;
             [[ -x utils/latest-vm-builder.sh ]] || chmod +x utils/latest-vm-builder.sh ;
-            for SOME_T_OS in 'freebsd' 'ghostbsd' 'openbsd' 'netbsd' 'dragonflybsd' 'midnightbsd' 'solaris' 'omnios' 'openindiana' 'tribblix' 'haiku' 'ubuntu' 'blissos' ; do
+            for SOME_T_OS in 'freebsd' 'ghostbsd' 'openbsd' 'netbsd' 'dragonflybsd' 'midnightbsd' 'solaris' 'omnios' 'openindiana' 'tribblix' 'hurd' 'haiku' 'ubuntu' 'blissos' 'plan9' ; do
               printf "::debug::%s\n" "Exercising utils/latest-vm-builder.sh ${SOME_T_OS}" ;
               utils/latest-vm-builder.sh "${SOME_T_OS:-}" || exit 1 ;
             done;
