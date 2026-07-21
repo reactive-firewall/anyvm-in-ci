@@ -184,12 +184,14 @@ add_user_to_admin_group() {
   printf '%s\n' "Ensuring user '$USER_NAME' is in group '$GROUP'"
 
   if command -v usermod >/dev/null 2>&1; then
+    debug_remote_log "Selected 'usermod' tool" ;
     getent group "$GROUP" >/dev/null 2>&1 || groupadd "$GROUP" >/dev/null 2>&1 || true
     usermod -aG "$GROUP" "$USER_NAME" >/dev/null 2>&1 || usermod -G "$GROUP" "$USER_NAME" >/dev/null 2>&1 || die_stub "User promotion to sudo failed" ;
     return 0
   fi
 
   if command -v pw >/dev/null 2>&1; then
+    debug_remote_log "Selected 'pw' tool" ;
     pw groupmod "$GROUP" -m "$USER_NAME" >/dev/null 2>&1 || die_stub "User promotion to sudo failed" ;
     return 0
   fi
@@ -223,6 +225,7 @@ ensure_sudoers_rule() {
     #
     # Extend WHITELIST below if you need more commands.
     WHITELIST_PKG_INSTALL=""
+    WHITELIST_PKG_ADD_INSTALL=""
     WHITELIST_APT_INSTALL=""
     WHITELIST_APK_INSTALL=""
     WHITELIST_NPM_INSTALL=""
@@ -233,6 +236,12 @@ ensure_sudoers_rule() {
 
     # Only include patterns that map to binaries we actually have.
     # (This keeps sudoers clean on images that lack certain package managers.)
+    if command -v pkg_add >/dev/null 2>&1; then
+      PKG_BIN="$(command -v pkg_add 2>/dev/null || echo /usr/sbin/pkg_add)"
+      WHITELIST_PKG_ADD_INSTALL="$PKG_BIN *"
+      # WHITELIST_PKG_ADD_UPDATE="$PKG_BIN update *"
+    fi
+
     if [ -x /usr/sbin/pkg ] || command -v pkg >/dev/null 2>&1; then
       # FreeBSD-ish pkg(8): usually /usr/sbin/pkg
       PKG_BIN="$(command -v pkg 2>/dev/null || echo /usr/sbin/pkg)"
@@ -266,6 +275,7 @@ ensure_sudoers_rule() {
     CMD_LIST=""
     if [ -n "$WHITELIST_PKG_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_PKG_INSTALL"; fi
     if [ -n "$WHITELIST_PKG_UPDATE" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_PKG_UPDATE"; fi
+    if [ -n "$WHITELIST_PKG_ADD_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_PKG_ADD_INSTALL"; fi
     if [ -n "$WHITELIST_APT_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_APT_INSTALL"; fi
     if [ -n "$WHITELIST_APT_UPDATE" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_APT_UPDATE"; fi
     if [ -n "$WHITELIST_APK_INSTALL" ]; then CMD_LIST="$CMD_LIST, $WHITELIST_APK_INSTALL"; fi
@@ -310,6 +320,7 @@ ensure_sudoers_rule() {
     # early cleanup
     { chmod 600 "$tmp" >/dev/null 2>&1 || true ;
       rm -f "$tmp" >/dev/null 2>&1 || true ;} 2>&1 # might need to ignore these, they are non-fatal
+    unset tmp
 
     # Validate sudoers if visudo exists
     if command -v visudo >/dev/null 2>&1; then
@@ -318,6 +329,7 @@ ensure_sudoers_rule() {
     return 0
   fi
 
+  unset FILE
   # Fallback: /etc/sudoers direct edit (least preferred)
   printf "::warning title='SUDO-FLAT-CONFIG'::%s\n" "No etc/sudoers.d directory; falling back to appending to /etc/sudoers."
   SUDOERS="/etc/sudoers"
