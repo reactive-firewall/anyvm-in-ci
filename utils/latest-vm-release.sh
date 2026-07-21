@@ -317,6 +317,13 @@ get_latest_vm_release() {
       fetch "https://api.github.com/repos/haiku/haiku/branches" | jq -r '.[].name' |
         grep '^r.*' | sort | tail -n1 || return 1
       ;;
+    hurd)
+      # pattern: (:?[Hh]{1}[u]{1}[r]{1}[d]{1}\-)\d\.\d(:?\.tar)
+      fetch "https://ftp.gnu.org/gnu/hurd/" 2>/dev/null |
+        grep -oEe "[Hh]{1}[u]{1}[r]{1}[d]{1}\-\d\.\d\.tar" |
+        grep -oEe "\d\.\d" | sort_versions |
+        tail -n1 || return 1
+      ;;
     ubuntu)
       # Ubuntu publishes current LTS and interim names on releases.ubuntu.com
       fetch "https://changelogs.ubuntu.com/meta-release" |
@@ -338,6 +345,16 @@ get_latest_vm_release() {
           jq -r '.[].name' ;} 2>/dev/null ;} |
         grep '.*-x86' | tail -n1 || return 1
       ;;
+    plan9|front9)
+      # the last release of Plan-9 was version 4 and was re-released under MIT License terms before
+      # July 2026 according to:
+      # http://ftp.osuosl.org/pub/plan9/history/plan9-4e-latest.iso.bz2
+      # But anyvm uses Front9 as plan9 which is what we can check here (INSECURE):
+      fetch "http://www.9front.org/releases/" 2>/dev/null | grep -Ee "releases\/20\d+" 2>/dev/null |
+        grep -oEe "2\d{3}" 2>/dev/null |
+        sort_versions |
+        tail -n1 || return 1
+      ;;
     *)
       return 1
       ;;
@@ -345,9 +362,9 @@ get_latest_vm_release() {
 }
 
 if [[ $0 == *latest-vm-release.sh ]] ; then
-	while [[ ( ${1} == -* ) ]] ; do shift ; done ; # ignore options
-	get_latest_vm_release "${1:-}" || exit 1 ;
-	exit 0;
+    while [[ ( ${1} == -* ) ]] ; do shift ; done ; # ignore options
+    get_latest_vm_release "${1:-}" || exit 1 ;
+    exit 0;
 fi ;  # else import as source
 
 # Example usage:

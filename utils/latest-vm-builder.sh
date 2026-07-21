@@ -63,6 +63,7 @@
 #    even if the above stated remedy fails of its essential purpose.
 ################################################################################
 
+test -x "$(command -v awk)" || exit 126 ;
 test -x "$(command -v curl)" || test -x "$(command -v wget)" || exit 126 ;
 test -x "$(command -v grep)" || exit 126 ;
 test -x "$(command -v sed)" || exit 126 ;
@@ -81,6 +82,8 @@ get_latest_vm_builder() {
 
   fetch() {
     url=$1
+    _ANYVM_RETRY_DELAY="${_ANYVM_RETRY_DELAY:-2}"
+    _ANYVM_RETRY_MAX="${_ANYVM_RETRY_MAX:-3}"
 
     case $url in
       https://api.github.com/*)
@@ -96,11 +99,24 @@ get_latest_vm_builder() {
 
     if command -v curl >/dev/null 2>&1; then
       if [ -n "$auth_header" ]; then
-        curl -fsL -H "Accept: application/vnd.github+json" -H "$auth_header" --max-time 15 "$url" || return 1
+        curl -fsL -H "Accept: application/vnd.github+json" -H "$auth_header" \
+        --retry ${_ANYVM_RETRY_MAX} \
+        --retry-connrefused \
+        --retry-delay ${_ANYVM_RETRY_DELAY} \
+        --ssl-no-revoke \
+        --max-time 15 \
+        --url "$url" || return 1
       else
-        curl -fsL -H "Accept: application/vnd.github+json" --max-time 15 "$url" || return 1
+        curl -fsL -H "Accept: application/vnd.github+json" \
+        --retry ${_ANYVM_RETRY_MAX} \
+        --retry-connrefused \
+        --retry-delay ${_ANYVM_RETRY_DELAY} \
+        --ssl-no-revoke \
+        --max-time 15 \
+        --url "$url" || return 1
       fi
     elif command -v wget >/dev/null 2>&1; then
+      # TODO: support retry via wget if able
       if [ -n "$auth_header" ]; then
         wget -qO- --header="Accept: application/vnd.github+json" --header="$auth_header" --timeout=15 "$url" || return 1
       else
@@ -162,8 +178,16 @@ get_latest_vm_builder() {
     ubuntu)
       gh_latest_tag "anyvm-org/ubuntu-builder" || return 1
       ;;
+    hurd)
+      # added by anyvm.py v5.2
+      gh_latest_tag "anyvm-org/hurd-builder" || return 1
+      ;;
     blissos|bliss)
       gh_latest_tag "anyvm-org/blissos-builder" || return 1
+      ;;
+    plan9)
+      # added by anyvm.py v5.2
+      gh_latest_tag "anyvm-org/plan9-builder" || return 1
       ;;
     *)
       return 1

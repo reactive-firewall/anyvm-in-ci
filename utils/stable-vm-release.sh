@@ -68,7 +68,7 @@ test -x "$(command -v grep)" || exit 126 ;
 test -x "$(command -v sed)" || exit 126 ;
 test -x "$(command -v tr)" || exit 126 ;
 
-# freebsd / ghostbsd / openbsd / netbsd / dragonflybsd / midnightbsd / solaris / omnios / openindiana / tribblix / haiku / ubuntu / blissos
+# freebsd / ghostbsd / openbsd / netbsd / dragonflybsd / midnightbsd / solaris / omnios / openindiana / tribblix / haiku / hurd / ubuntu / blissos / front9
 
 # get_stable_vm_release NAME
 # Portable /bin/sh-compatible function returning a single token: the default
@@ -168,11 +168,17 @@ get_stable_vm_release() {
     haiku)
       gh_latest_release "anyvm-org/haiku-builder" || return 1
       ;;
+    hurd)
+      gh_latest_release "anyvm-org/hurd-builder" || return 1
+      ;;
     ubuntu)
       gh_latest_release "anyvm-org/ubuntu-builder" || return 1
       ;;
     blissos|bliss)
       gh_latest_release "anyvm-org/blissos-builder" || return 1
+      ;;
+    plan9|front9)
+      gh_latest_release "anyvm-org/plan9-builder" || return 1
       ;;
     *)
       return 1
