@@ -108,7 +108,7 @@ if [ -f "${ANYVM_DROP_ROOT_FILE_PATH:-}" ]; then
   scp $SSH_EPHEMERAL_OPTS -P $GUEST_VM_PORT "$GUEST_DROP_ROOT_SCRIPT_PATH" root@"$GUEST_VM":/tmp/"$EDROP_ROOT_TFILE.sh" || hard_death "failed to scp drop-root script"
   debug_harden_log "..=> Transferred" & debug_harden_log "..=> Waiting to drop root" &
   # remote merge script: run on guest (idempotent-ish)
-  ssh $SSH_EPHEMERAL_OPTS -p ${GUEST_VM_PORT:-22} root@"$GUEST_VM" "sh -c 'DEBUG=${DEBUG:-1} sh /tmp/$EDROP_ROOT_TFILE.sh'" || hard_death "IMPORTANT: drop-root execution failed (root may still be available)"
+  ssh $SSH_EPHEMERAL_OPTS -p ${GUEST_VM_PORT:-22} root@"$GUEST_VM" "DEBUG=${DEBUG:-1} sh /tmp/$EDROP_ROOT_TFILE.sh" || hard_death "IMPORTANT: drop-root execution failed (root may still be available)"
   debug_harden_log "=> Ready to drop root"
   unset EDROP_ROOT_TFILE || true
 

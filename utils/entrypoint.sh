@@ -615,6 +615,10 @@ if [ $ok -ne 0 ]; then
 	error_close_and_die "warning: ephemeral key login failed; continuing with subsequent steps will fail"
 else
 	debug_log "Keys successfully rotated"
+	# TODO: make this more dynamic based on usesh var
+	debug_log "Switching to use sh for root"
+	ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@"$VM_SSH_HOST" "chsh -s /bin/sh root" || error_close_and_die "warning: switching to sh failed" ;
+	debug_log "Switched over to sh by default"
 	# TODO: cache guest's host key ... E.G.,
 	#	if matches "$ANYVM_DISABLE_CACHE" "true" ; then
 	#		debug_log "Ignoring guest's host keys"

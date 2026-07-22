@@ -217,10 +217,10 @@ if [ -f "${ANYVM_CREATE_CI_USER_FILE:-}" ]; then
 		scp $SSH_EPHEMERAL_OPTS -P $BRIDGE_VM_PORT "$VM_DO_SUDO_DATA_PATH" root@"$BRIDGE_VM":/root/sudoers.failsafe || user_died "failed to scp failsafe sudoers data" ;
 		debug_user_log "..=> Transferred" & debug_user_log "..=> Waiting for user sync" &
 
-		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "sh -c 'DEBUG=${DEBUG:-1} sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}'" || user_died "warning: create_user execution failed with $?" ;
+		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=${DEBUG:-1} sh /tmp/create_user.sh ${VM_CI_USER} /tmp/${USER_PUB_TFILE}" || user_died "warning: create_user execution failed with $?" ;
 		debug_user_log "..=> Created"
 		# See also: https://github.com/reactive-firewall/anyvm-in-ci/issues/24
-		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "sh -c 'DEBUG=${DEBUG:-1} sh /tmp/ensure_sudo.sh ${VM_CI_USER} 2'" || user_died "warning: ensure_sudo execution failed with $?" ;
+		ssh $SSH_EPHEMERAL_OPTS -p $BRIDGE_VM_PORT root@"$BRIDGE_VM" "DEBUG=${DEBUG:-1} sh /tmp/ensure_sudo.sh ${VM_CI_USER} 2" || user_died "warning: ensure_sudo execution failed with $?" ;
 		debug_user_log "..=> Synced"
 		unset USER_PUB_TFILE ; # TODO: keep this var until /tmp is cleaned-up on guest VM too
 	else
