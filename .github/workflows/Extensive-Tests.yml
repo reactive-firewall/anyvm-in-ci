@@ -24,11 +24,127 @@ jobs:
       fail-fast: false
       matrix:
         architecture: [amd64, arm64]
-        vm_arch: [x86_64, aarch64, riscv64, s390x, powerpc64, ppc64le, sparc64]
-        vm_runner: [freebsd, ghostbsd, openbsd, netbsd, dragonflybsd, midnightbsd, solaris, omnios, openindiana, tribblix, haiku, ubuntu, blissos]
-        vm_memory: [3072, 4096, 6144, 8192, 14336, 16384, 24576]
-        vm_cpu: [1, 2, null]
+        vm_arch: [x86_64, aarch64, riscv64, powerpc64, sparc64]  # skip s390x and ppc64le
+        vm_runner: [freebsd, ghostbsd, openbsd, netbsd, dragonflybsd, midnightbsd, solaris, omnios, openindiana, tribblix, haiku, blissos]
+        vm_memory: [3072, 14336, 24576]  # arbitrary [low, mid, high]
+        # if it wasn't above GH limits would test each of [3072, 4096, 6144, 8192, 14336, 16384, 24576]
+        vm_cpu: [1, null]
+        # if it wasn't above GH limits would test each of [1, 2, null]
         runner: [macos-26-intel, macos-latest, ubuntu-latest, ubuntu-26.04-arm, windows-latest]
+        exclude:
+          # skip bad runner ISA combos
+          - architecture: arm64
+            runner: macos-26-intel
+          - architecture: arm64
+            runner: windows-latest
+          - architecture: arm64
+            runner: ubuntu-latest
+          - architecture: amd64
+            runner: macos-latest
+          - architecture: amd64
+            runner: windows-latest
+          - architecture: amd64
+            runner: ubuntu-26.04-arm
+          - vm_arch: x86_64
+            runner: ubuntu-26.04-arm
+          - vm_arch: riscv64
+            runner: ubuntu-26.04-arm
+          - vm_arch: ppc64le
+            runner: ubuntu-26.04-arm
+          - vm_arch: sparc64
+            runner: ubuntu-26.04-arm
+          - vm_arch: powerpc64
+          - runner: windows-latest
+            vm_cpu: null
+          - runner: windows-latest
+            vm_arch: aarch64
+          - runner: windows-latest
+            vm_arch: riscv64
+          - runner: windows-latest
+            vm_arch: sparc64
+          - vm_arch: aarch64
+            vm_runner: ghostbsd
+          - vm_arch: aarch64
+            vm_runner: dragonflybsd
+          - vm_arch: aarch64
+            vm_runner: midnightbsd
+          - vm_arch: aarch64
+            vm_runner: omnios
+          - vm_arch: aarch64
+            vm_runner: openindiana
+          - vm_arch: aarch64
+            vm_runner: tribblix
+          - vm_arch: aarch64
+            vm_runner: haiku
+          - vm_arch: aarch64
+            vm_runner: blissos
+          - vm_arch: aarch64
+            vm_runner: plan9
+          - vm_arch: aarch64
+            vm_runner: hurd
+          - vm_arch: aarch64
+            vm_runner: openEuler
+          - vm_arch: riscv64
+            vm_runner: ghostbsd
+          - vm_arch: riscv64
+            vm_runner: dragonflybsd
+          - vm_arch: riscv64
+            vm_runner: midnightbsd
+          - vm_arch: riscv64
+            vm_runner: omnios
+          - vm_arch: riscv64
+            vm_runner: openindiana
+          - vm_arch: riscv64
+            vm_runner: tribblix
+          - vm_arch: riscv64
+            vm_runner: haiku
+          - vm_arch: riscv64
+            vm_runner: blissos
+          - vm_arch: riscv64
+            vm_runner: plan9
+          - vm_arch: riscv64
+            vm_runner: hurd
+          - vm_arch: sparc64
+            vm_runner: ghostbsd
+          - vm_arch: sparc64
+            vm_runner: dragonflybsd
+          - vm_arch: sparc64
+            vm_runner: midnightbsd
+          - vm_arch: sparc64
+            vm_runner: omnios
+          - vm_arch: sparc64
+            vm_runner: openindiana
+          - vm_arch: sparc64
+            vm_runner: tribblix
+          - vm_arch: sparc64
+            vm_runner: haiku
+          - vm_arch: sparc64
+            vm_runner: blissos
+          - vm_arch: sparc64
+            vm_runner: plan9
+          - vm_arch: sparc64
+            vm_runner: hurd
+          - vm_arch: sparc64
+            vm_runner: openEuler
+        include:
+          - architecture: amd64
+            vm_arch: powerpc64
+            vm_runner: freebsd
+            vm_memory: 14336
+            vm_cpu: 4
+            runner: ubuntu-latest
+          - architecture: amd64
+            vm_arch: powerpc64
+            vm_runner: freebsd
+            vm_memory: 4096
+            vm_cpu: 1
+            runner: ubuntu-latest
+          - architecture: amd64
+            vm_arch: s390x
+            vm_runner: freebsd
+            vm_memory: 4096
+            vm_cpu: 4
+            runner: ubuntu-latest
     runs-on: ${{ matrix.runner }}
     steps:
       - id: valid_combo
