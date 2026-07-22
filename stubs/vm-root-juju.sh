@@ -70,11 +70,19 @@ set -eu
 
 SSHD_CONFIG="/etc/ssh/sshd_config"
 TMP_CONFIG="/etc/ssh/sshd_config.tmp"
-
+_SSHD_RE_HARDEN=0
 # 1. Pre-flight checks
 if [ ! -f "$SSHD_CONFIG" ]; then
     printf "::debug::%s\n" "Config file $SSHD_CONFIG not found. Skipping."
     exit 0
+fi
+
+if [ ! -w "$SSHD_CONFIG" ]; then
+    printf "::debug::%s\n" "Config file $SSHD_CONFIG is not writable. Yet?. Attempting permission clobber."
+    # TODO: handle owner issues
+    chmod 600 "$SSHD_CONFIG" || exit 0
+    printf "::debug::%s\n" "Config file $SSHD_CONFIG is owner writable. remember to re-harden."
+    _SSHD_RE_HARDEN=1
 fi
 
 if [ ! -w "$SSHD_CONFIG" ]; then
@@ -160,12 +168,16 @@ set_ssh_config "DenyUsers" "root"
 cp -p "$SSHD_CONFIG" "${SSHD_CONFIG}.bak" 2>/dev/null || cp "$SSHD_CONFIG" "${SSHD_CONFIG}.bak"
 mv "$TMP_CONFIG" "$SSHD_CONFIG"
 
+if [ "${_SSHD_RE_HARDEN:-0}" -eq 1 ]; then
+    chmod 400 "$SSHD_CONFIG" && printf "::debug::%s\n" "Config file $SSHD_CONFIG re-harden successful." ;
+fi ;
 printf "::debug::%s\n" "SSHD hardening complete. (will restart sshd)"
 
 # do some cleanup first
 unset settings
 unset OS
 unset TMP_CONFIG
+unset _SSHD_RE_HARDEN
 unset set_ssh_config 2>/dev/null || true
 
 # reload sshd safely (try multiple names)
