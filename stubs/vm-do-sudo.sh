@@ -106,6 +106,87 @@ die_stub(){ printf "::error title='ERROR':: %s\n" "$*" >&2; exit 1; }
 # note uses 4 dots and arrow indentation on guest to visually stand out here
 debug_remote_log(){ if [ "${DEBUG:-0}" -eq 1 ]; then printf '::debug::....=> %s\n' "$*" ; fi; }
 
+# Validate the active sudoers configuration, or one explicit sudoers file.
+#
+# Usage:
+#   validate_sudoers
+#   validate_sudoers /etc/sudoers.d/99-example
+#
+# Returns:
+#   0   valid
+#   1   invalid sudoers syntax/configuration
+#   2   invalid function usage
+#   127 visudo is unavailable
+validate_sudoers() {
+  case "$#" in
+    0) ;;
+    1) ;;
+    *)
+      printf '%s\n' "Usage: validate_sudoers [sudoers-file]" >&2
+      return 2
+      ;;
+  esac
+
+  if ! command -v visudo >/dev/null 2>&1; then
+    debug_remote_log "Cannot validate sudoers: 'visudo' is unavailable"
+    return 127
+  fi
+
+  if [ "$#" -eq 0 ]; then
+    debug_remote_log "Validating active sudoers configuration"
+    if visudo -c >/dev/null 2>&1; then
+      return 0
+    fi
+
+    if [ "${DEBUG:-0}" -eq 1 ]; then
+      visudo -c || true
+    fi
+    return 1
+  fi
+
+  debug_remote_log "Validating sudoers file: $1"
+  if visudo -c -f "$1" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [ "${DEBUG:-0}" -eq 1 ]; then
+    visudo -c -f "$1" || true
+  fi
+  return 1
+}
+
+# Print the preferred main sudoers path.
+#
+# Prefer the /usr/local hierarchy when it is evidently the active sudo
+# installation, then the conventional /etc hierarchy. Prefer a hierarchy
+# that has both the main file and a sudoers.d directory, then degrade
+# safely to an existing main file, an existing include directory, and
+# finally /etc/sudoers.
+find_sudoers_path() {
+  for SUDOERS_PATH in /usr/local/etc/sudoers /usr/pkg/etc/sudoers /etc/sudoers; do
+    if [ -f "$SUDOERS_PATH" ] && [ -d "${SUDOERS_PATH}.d" ]; then
+      printf '%s\n' "$SUDOERS_PATH"
+      return 0
+    fi
+  done
+
+  for SUDOERS_PATH in /usr/local/etc/sudoers /usr/pkg/etc/sudoers /etc/sudoers; do
+    if [ -f "$SUDOERS_PATH" ]; then
+      printf '%s\n' "$SUDOERS_PATH"
+      return 0
+    fi
+  done
+
+  for SUDOERS_PATH in /usr/local/etc/sudoers /usr/pkg/etc/sudoers /etc/sudoers; do
+    if [ -d "${SUDOERS_PATH}.d" ]; then
+      printf '%s\n' "$SUDOERS_PATH"
+      return 0
+    fi
+  done
+
+  printf '%s\n' "/etc/sudoers"
+}
+
 install_sudo() {
   if command -v sudo >/dev/null 2>&1; then
     debug_remote_log "Found sudo already installed on guest." ;
@@ -202,12 +283,8 @@ add_user_to_admin_group() {
 
 ensure_sudoers_rule() {
   debug_remote_log "Gathering configuration details" ;
-  # Prefer sudoers.d include
-  SUDOERS_D="/etc/sudoers.d"
-  if [ -f "/usr/local/etc/sudoers" ]; then
-    # should use /usr/local/etc/* paths in this case (e.g., freebsd 15+)
-    SUDOERS_D="/usr/local/etc/sudoers.d"
-  fi
+  SUDOERS="$(find_sudoers_path)" || die_stub "Could not determine the sudoers configuration path" ;
+  SUDOERS_D="${SUDOERS}.d"
   FILE="$SUDOERS_D/99-$USER_NAME-admin"
 
   # Determine admin group name (wheel/sudo)
@@ -329,8 +406,8 @@ ensure_sudoers_rule() {
     unset tmp
 
     # Validate sudoers if visudo exists
-    if command -v visudo >/dev/null 2>&1; then
-      visudo -c >/dev/null 2>&1 || die_stub "sudoers validation failed" ;
+    if ! validate_sudoers "$FILE"; then
+      die_stub "sudoers rule validation failed: $FILE"
     fi
     return 0
   fi
@@ -340,11 +417,6 @@ ensure_sudoers_rule() {
   # Fallback: /etc/sudoers direct edit (least preferred)
   printf "::warning title='SUDO-FLAT-CONFIG'::%s\n" "No etc/sudoers.d directory; falling back to appending to /etc/sudoers."
   debug_remote_log "Looking for any current config to backup" ;
-  SUDOERS="/etc/sudoers"
-  if [ -f "/usr/local/etc/sudoers" ]; then
-    # should use /usr/local/etc/* paths in this case (e.g., freebsd 15+)
-    SUDOERS="/usr/local/etc/sudoers"
-  fi
   SUDOERS_BACKUP_PATH="$SUDOERS.bak.$(date +%s)"
   SUDOERS_FAILSAFE="/root/sudoers.failsafe"
   if [ -f "$SUDOERS" ]; then
@@ -377,20 +449,13 @@ ensure_sudoers_rule() {
     fi
     chmod 440 "${SUDOERS}" >/dev/null 2>&1 || die_stub "sudoers could not be un-chmoded (for cleanup)";
   fi;
-  debug_remote_log "Attempting validate updates to sudoers" ;
-  # Validate sudoers if visudo exists
-  if command -v visudo >/dev/null 2>&1; then
-    debug_remote_log "Selected 'visudo' tool" ;
-    if ! visudo -c >/dev/null 2>&1; then
-      if [ "${DEBUG:-0}" -eq 1 ]; then visudo -c || true ; fi ;
-      if [ -f "$SUDOERS_BACKUP_PATH" ]; then
-        debug_remote_log "Attempting to restore from backup" ;
-        mv -f "${SUDOERS_BACKUP_PATH}" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
-      fi
-      die_stub "sudoers validation failed" ;  # still fail on successful restore
+  debug_remote_log "Attempting to validate updates to sudoers"
+  if ! validate_sudoers "$SUDOERS"; then
+    if [ -f "$SUDOERS_BACKUP_PATH" ]; then
+      debug_remote_log "Attempting to restore from backup"
+      mv -f "$SUDOERS_BACKUP_PATH" "$SUDOERS" >/dev/null 2>&1 || die_stub "sudoers restore from backup failed" ;
     fi
-  else
-    die_stub "Could not validate updates to sudoers at all (missing visudo)" ;
+    die_stub "sudoers validation failed"
   fi
 }
 
