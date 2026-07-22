@@ -1,0 +1,216 @@
+---
+name: Extensive Tests
+
+on:
+  push:
+    branches:
+      - '*'
+    paths:
+      - '.github/workflows/Extensive-Tests.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}  # Setting default permissions to none for enhanced security
+
+jobs:
+  test-vm-lifecycle:
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [amd64, arm64]
+        vm_arch: [x86_64, aarch64, riscv64, s390x, powerpc64, ppc64le, sparc64]
+        vm_runner: [freebsd, ghostbsd, openbsd, netbsd, dragonflybsd, midnightbsd, solaris, omnios, openindiana, tribblix, haiku, ubuntu, blissos]
+        vm_memory: [3072, 4096, 6144, 8192, 14336, 16384, 24576]
+        vm_cpu: [1, 2, null]
+        runner: [macos-26-intel, macos-latest, ubuntu-latest, ubuntu-26.04-arm, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - id: valid_combo
+        name: Pre-validate check
+        shell: bash
+        env:
+          RUNNER_ARCH: ${{ runner.arch }}
+          GUEST_ARCH: ${{ matrix.vm_arch }}
+          RUNNER_IMG: ${{ matrix.runner }}
+          GUEST_IMG: ${{ matrix.vm_runner }}
+          GUEST_MEM: ${{ matrix.vm_memory }}
+          RUNNER_DEBUG: ${{ runner.debug }}
+        run: |
+          case "${RUNNER_ARCH:-}" in
+            x86|X86|x64|X64|amd64|AMD64)
+              case "${RUNNER_IMG:-}" in
+                macos-latest|macos-26|ubuntu-*-arm|*-arm)
+                  should_skip_on_image=1
+                  ;;
+                macos-*-intel|macos-1*|ubuntu-latest|windows-latest)
+                  should_skip_on_image=0
+                  ;;
+                *)
+                  printf "::error::Unsupported or unknown runner.image: %s\n" "${RUNNER_IMG:-<unset>}"
+                  exit 2
+                  ;;
+              esac
+              ;;
+            ARM64|arm64|aarch64)
+              case "${RUNNER_IMG:-}" in
+                macos-latest|macos-26|ubuntu-*-arm)
+                  should_skip_on_image=0
+                  ;;
+                macos-*-intel|macos-1*|ubuntu-latest|windows-latest)
+                  should_skip_on_image=1
+                  ;;
+                *)
+                  printf "::error::Unsupported or unknown runner.image: %s\n" "${RUNNER_IMG:-<unset>}"
+                  exit 2
+                  ;;
+              esac
+              ;;
+            ARM|arm|aarch32)
+              case "${RUNNER_IMG:-}" in
+                macos-latest|macos-26|macos-2*|macos-*-intel|macos-1*|ubuntu-latest|windows-latest)
+                  should_skip_on_image=1
+                  ;;
+                ubuntu-*-arm|*-arm)
+                  should_skip_on_image=0
+                  ;;
+                *)
+                  printf "::error::Unsupported or unknown runner.image: %s\n" "${RUNNER_IMG:-<unset>}"
+                  exit 2
+                  ;;
+              esac
+              ;;
+            *)
+              printf "::error::Unsupported or unknown runner.arch: %s\n" "${RUNNER_ARCH:-<unset>}"
+              exit 2
+              ;;
+          esac
+
+          if [ "${should_skip_on_image:-1}" -eq 0 ] ; then
+            case "${GUEST_ARCH:-AUTO}" in
+              x86|X86|x64|X64|amd64|AMD64)
+                should_skip_on_guest_arch="${should_skip_on_image:-0}"
+                ;;
+              ARM64|arm64|aarch64|riscv64)
+                case "${GUEST_IMG:-}" in
+                  ubuntu|ubuntu-*|openbsd|netbsd|freebsd)
+                    should_skip_on_guest_arch="${should_skip_on_image:-0}"
+                    ;;
+                  *)
+                    should_skip_on_guest_arch=1
+                    ;;
+                esac
+                ;;
+              powerpc64)
+                case "${GUEST_IMG:-}" in
+                  ubuntu|ubuntu-*|freebsd)
+                    should_skip_on_guest_arch="${should_skip_on_image:-0}"
+                    ;;
+                  *)
+                    should_skip_on_guest_arch=1
+                    ;;
+                esac
+                ;;
+              sparc64)
+                case "${GUEST_IMG:-}" in
+                  openbsd|netbsd|solaris)
+                    should_skip_on_guest_arch="${should_skip_on_image:-0}"
+                    ;;
+                  *)
+                    should_skip_on_guest_arch=1
+                    ;;
+                esac
+                ;;
+              s390x)
+                should_skip_on_guest_arch=1
+                ;;
+              ppc64le|longarch64)
+                should_skip_on_guest_arch=1
+                ;;
+              AUTO)
+                should_skip_on_guest_arch=1
+                ;;
+              *)
+                printf "::error::Unsupported or unknown guest.arch: %s\n" "${GUEST_ARCH:-<auto>}"
+                exit 2
+                ;;
+            esac
+            if [ "${should_skip_on_guest_arch:-1}" -eq 0 ] ; then
+              case "${RUNNER_IMG:-}" in
+                macos-latest|macos-26)
+                  if [ "${GUEST_MEM:-3072}" -gt 6144 ] ; then
+                    should_skip_on_mem=1
+                  else
+                    should_skip_on_mem="${should_skip_on_image:-${should_skip_on_guest_arch:-0}}"
+                  fi
+                  ;;
+                macos-*-intel|macos-1*)
+                  if [ "${GUEST_MEM:-3072}" -gt 14336 ] ; then
+                    should_skip_on_mem=1
+                  else
+                    should_skip_on_mem="${should_skip_on_image:-${should_skip_on_guest_arch:-0}}"
+                  fi
+                  ;;
+                *)
+                  if [ "${GUEST_MEM:-3072}" -gt 16384 ] ; then
+                    should_skip_on_mem=1
+                  else
+                    if [ "${GUEST_MEM:-3072}" -lt 1024 ] ; then
+                      should_skip_on_mem=1
+                    else
+                      should_skip_on_mem="${should_skip_on_image:-${should_skip_on_guest_arch:-0}}"
+                    fi
+                  fi
+                  ;;
+              esac
+              if [ "${should_skip_on_mem:-1}" -eq 0 ] ; then
+                should_skip=0
+              else
+                should_skip=1
+              fi
+            else
+              should_skip=1
+            fi
+          else
+            should_skip=1
+          fi
+          # Emit debug logs only when runner.debug is true
+          if [ "${RUNNER_DEBUG:-false}" = "true" ]; then
+            printf "::debug::Detected runner.arch=%s\n" "${RUNNER_ARCH:-<unset>}"
+            printf "::debug::Detected runner.image=%s\n" "${RUNNER_IMG:-<unknown>}"
+            printf "::debug::Detected guest.arch=%s\n" "${GUEST_ARCH:-<auto>}"
+            printf "::debug::Detected guest.image=%s\n" "${GUEST_IMG:-<unset>}"
+            printf "::debug::Mapped should_skip=%s\n" "$should_skip"
+          fi
+          printf "should_skip=%s\n" "$should_skip" >> "$GITHUB_OUTPUT"
+      - name: Test VM (QEMU)
+        id: test_vm
+        if: ${{ !cancelled() && (steps.valid_combo.outputs.should_skip == 0) && (github.repository == 'reactive-firewall/anyvm-in-ci') }}
+        uses: reactive-firewall/anyvm-in-ci@master # WIP
+        with:
+          osname: ${{ matrix.vm_runner }}
+          arch: ${{ matrix.vm_arch }}
+          mem: ${{ matrix.vm_memory }}
+          cpu: ${{ matrix.vm_cpu != null && matrix.vm_cpu }}
+          sync: scp
+          sync-time: true
+          usesh: true
+          prepare: |
+            set -eu
+            # set -e -u: fail fast, treat unset vars as error
+            printf "%s\n" "Pre-CI: start $(date -u)"
+            uname -a 2>&1 || true
+            # Example package operations; keep permission/rate limits in mind
+            if command -v pkg >/dev/null 2>&1; then
+              sudo pkg update -f 2>&1 || true
+              sudo pkg install -y gh || true
+            fi
+          run: |
+            set -eu
+            # set -e -u: fail fast, treat unset vars as error
+            printf "%s\n" "Test of Guest VM in CI/CD worked (hello-world)"
