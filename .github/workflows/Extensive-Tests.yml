@@ -53,6 +53,16 @@ jobs:
             runner: ubuntu-26.04-arm
           - vm_arch: sparc64
             runner: ubuntu-26.04-arm
+          - runner: macos-latest
+            vm_cpu: null
+          - runner: macos-latest
+            vm_memory: 14336
+          - runner: macos-latest
+            vm_memory: 24576
+          - runner: ubuntu-26.04-arm
+            vm_cpu: 1
+          - runner: ubuntu-26.04-arm
+            vm_memory: 3072
           - vm_arch: powerpc64
           - vm_arch: sparc64
           - runner: windows-latest
@@ -66,6 +76,12 @@ jobs:
           - runner: windows-latest
             vm_arch: sparc64
           - runner: windows-latest
+            vm_runner: ghostbsd
+          - runner: windows-latest
+            vm_runner: midnightbsd
+          - runner: windows-latest
+            vm_runner: solaris
+          - runner: windows-latest
             vm_runner: omnios
           - runner: windows-latest
             vm_runner: openindiana
@@ -163,6 +179,8 @@ jobs:
             vm_runner: plan9
           - runner: macos-latest
             vm_runner: hurd
+          - runner: macos-latest
+            vm_runner: solaris
           - runner: macos-latest
             vm_runner: openEuler
         include:
@@ -191,7 +209,7 @@ jobs:
             vm_cpu: 4
             runner: ubuntu-latest
           - vm_arch: sparc64
-            vm_runner: freebsd
+            vm_runner: solaris
             vm_memory: 14336
             vm_cpu: 4
             runner: macos-26-intel
