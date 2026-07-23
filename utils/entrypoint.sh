@@ -321,6 +321,81 @@ build_sendenv_opts() {
 	printf '%s' "$sendenv_opts"
 }
 
+debug_log "=> Defining scp sync helper" ;
+
+# Copy direct contents of a local workspace to an existing guest directory.
+#
+# Arguments:
+#   1: local workspace directory
+#   2: guest host
+#   3: guest SSH port
+#   4: local SSH identity key
+#   5: existing guest destination directory
+#
+# Returns:
+#   0: SCP completed successfully
+#   2: invalid invocation
+#   3: workspace does not exist or contains no entries
+#   otherwise: SCP's exit status
+copy_workspace_with_scp() {
+	[ "$#" -eq 5 ] || return 2
+
+	_scp_workspace=$1
+	_scp_host=$2
+	_scp_port=$3
+	_scp_key=$4
+	_scp_destination=$5
+
+	if [ ! -d "$_scp_workspace" ]; then
+		unset _scp_workspace _scp_host _scp_port _scp_key _scp_destination
+		return 3
+	fi
+
+	# Ensure a relative workspace beginning with "-" cannot produce an SCP
+	# source argument that is interpreted as an option.
+	case "$_scp_workspace" in
+		-*) _scp_workspace=./$_scp_workspace ;;
+	esac
+
+	# Function positional parameters are local to the function in POSIX shell.
+	# Build them one pathname at a time, preserving every pathname exactly.
+	shift 5
+	for _scp_entry in \
+		"$_scp_workspace"/.[!.]* \
+		"$_scp_workspace"/..?* \
+		"$_scp_workspace"/*
+	do
+		# Unmatched patterns remain literal in POSIX shells. Keep real entries
+		# and dangling symlinks, while discarding those literal patterns.
+		[ -e "$_scp_entry" ] || [ -L "$_scp_entry" ] || continue
+		set -- "$@" "$_scp_entry"
+	done
+
+	if [ "$#" -eq 0 ]; then
+		unset _scp_workspace _scp_host _scp_port _scp_key _scp_destination _scp_entry
+		return 3
+	fi
+
+	# Each option and pathname remains one argument. Do not expand
+	# SSH_EPHEMERAL_OPTS here: it is a space-delimited string and would lose
+	# argument boundaries. No SendEnv options are needed for this transfer.
+	scp -r \
+		-P "$_scp_port" \
+		-i "$_scp_key" \
+		-o BatchMode=yes \
+		-o EscapeChar=none \
+		-o StrictHostKeyChecking=no \
+		-o UserKnownHostsFile=/dev/null \
+		-o ConnectTimeout=5 \
+		"$@" \
+		"root@${_scp_host}:${_scp_destination%/}/"
+	_scp_status=$?
+
+	unset _scp_workspace _scp_host _scp_port _scp_key _scp_destination
+	unset _scp_entry
+	return "$_scp_status"
+}
+
 debug_log "=> Defined" ;
 # MARK: Checks
 debug_log "Checking for Required tools" ;
@@ -530,6 +605,7 @@ printf "::endgroup::\n";
 # HEURISTIC abort after 1/100th (1%) of step max timeout
 # --boot-timeout-sec ( (($GITHUB_TIMEOUT * 60) / 100) )
 printf "::group::%s\n" "Start-ANYVM" ;
+# MARK: Start the Guest VM
 
 debug_log "Starting ANYVM with args: ${START_ARGS[@]}" ;
 
@@ -569,6 +645,7 @@ fi
 
 # 4b. prepare env export script for the VM: gather non-sensitive GITHUB_* and INPUT_ENVS
 
+# MARK: Rotate Baked SSH Keys
 # 4c. rotation: replace all users' authorized_keys (root) with ephemeral pubkey — safer atomic replace
 EPHEM_PUB_CONTENT="$(cat ${EPHEM_KEY}.pub)"
 mask_inputs "$EPHEM_PUB_CONTENT";
@@ -630,6 +707,7 @@ else
 fi
 
 printf "::endgroup::\n";
+# MARK: Setup Guest VM for CI/CD
 printf "::group::%s\n" "Setup-Guest-BL" ;
 # 4e. copy host /etc/hosts to guest (temp file) - best-effort
 debug_log "Bridging host file to guest"
@@ -748,7 +826,7 @@ if [ -d "${GITHUB_WS:-}" ] && [ "$(find "$GITHUB_WS" -mindepth 1 -maxdepth 1 -ty
 		ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@${VM_SSH_HOST} "chown -R '${GUEST_RSYNC_USER}:${GUEST_RSYNC_USER}' '$GITHUB_WS'" || true
 	else
 		# Use trailing slash and /* glob to copy contents, not the directory itself
-		scp -r -P "$VM_SSH_PORT" -i "${EPHEM_KEY}" $SSH_EPHEMERAL_OPTS "$GITHUB_WS"/* "root@${VM_SSH_HOST}:$GITHUB_WS/"
+		copy_workspace_with_scp "$GITHUB_WS" "${VM_SSH_HOST}" "$VM_SSH_PORT" "${EPHEM_KEY}" "$GITHUB_WS" ;
 		ssh $SSH_EPHEMERAL_OPTS -p $VM_SSH_PORT root@${VM_SSH_HOST} "chown -R '${GUEST_USER}:${GUEST_USER}' '$GITHUB_WS'" || true
 	fi
 	debug_log "=> Replicated"
