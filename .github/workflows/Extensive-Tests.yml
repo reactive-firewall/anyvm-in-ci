@@ -16,12 +16,13 @@ concurrency:
 permissions: {}  # Setting default permissions to none for enhanced security
 
 jobs:
-  test-vm-lifecycle:
+  test-vm-hello-world:
     permissions:
       actions: read
       contents: read
     strategy:
       fail-fast: false
+      max-parallel: 5
       matrix:
         architecture: [amd64, arm64]
         vm_arch: [x86_64, aarch64, riscv64, powerpc64, sparc64]  # skip s390x and ppc64le
@@ -282,7 +283,7 @@ jobs:
 
           if [ "${should_skip_on_image:-1}" -eq 0 ] ; then
             case "${GUEST_ARCH:-AUTO}" in
-              x86|X86|x64|X64|amd64|AMD64)
+              x86|X86|x64|X64|amd64|AMD64|x86_64|i386)
                 should_skip_on_guest_arch="${should_skip_on_image:-0}"
                 ;;
               ARM64|arm64|aarch64|riscv64)
