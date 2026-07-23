@@ -54,14 +54,33 @@ jobs:
           - vm_arch: sparc64
             runner: ubuntu-26.04-arm
           - vm_arch: powerpc64
+          - vm_arch: sparc64
           - runner: windows-latest
             vm_cpu: null
+          - vm_runner: dragonflybsd
+            vm_cpu: 1
           - runner: windows-latest
             vm_arch: aarch64
           - runner: windows-latest
             vm_arch: riscv64
           - runner: windows-latest
             vm_arch: sparc64
+          - runner: windows-latest
+            vm_runner: omnios
+          - runner: windows-latest
+            vm_runner: openindiana
+          - runner: windows-latest
+            vm_runner: tribblix
+          - runner: windows-latest
+            vm_runner: haiku
+          - runner: windows-latest
+            vm_runner: blissos
+          - runner: windows-latest
+            vm_runner: plan9
+          - runner: windows-latest
+            vm_runner: hurd
+          - runner: windows-latest
+            vm_runner: openEuler
           - vm_arch: aarch64
             vm_runner: ghostbsd
           - vm_arch: aarch64
@@ -84,6 +103,8 @@ jobs:
             vm_runner: hurd
           - vm_arch: aarch64
             vm_runner: openEuler
+          - vm_arch: aarch64
+            vm_runner: solaris
           - vm_arch: riscv64
             vm_runner: ghostbsd
           - vm_arch: riscv64
@@ -104,6 +125,8 @@ jobs:
             vm_runner: plan9
           - vm_arch: riscv64
             vm_runner: hurd
+          - vm_arch: riscv64
+            vm_runner: solaris
           - vm_arch: sparc64
             vm_runner: ghostbsd
           - vm_arch: sparc64
@@ -125,6 +148,22 @@ jobs:
           - vm_arch: sparc64
             vm_runner: hurd
           - vm_arch: sparc64
+            vm_runner: openEuler
+          - runner: macos-latest
+            vm_runner: omnios
+          - runner: macos-latest
+            vm_runner: openindiana
+          - runner: macos-latest
+            vm_runner: tribblix
+          - runner: macos-latest
+            vm_runner: haiku
+          - runner: macos-latest
+            vm_runner: blissos
+          - runner: macos-latest
+            vm_runner: plan9
+          - runner: macos-latest
+            vm_runner: hurd
+          - runner: macos-latest
             vm_runner: openEuler
         include:
           - architecture: amd64
@@ -145,6 +184,22 @@ jobs:
             vm_memory: 4096
             vm_cpu: 4
             runner: ubuntu-latest
+          - architecture: amd64
+            vm_arch: sparc64
+            vm_runner: freebsd
+            vm_memory: 4096
+            vm_cpu: 4
+            runner: ubuntu-latest
+          - vm_arch: sparc64
+            vm_runner: freebsd
+            vm_memory: 14336
+            vm_cpu: 4
+            runner: macos-26-intel
+          - vm_arch: sparc64
+            vm_runner: solaris
+            vm_memory: 14336
+            vm_cpu: 4
+            runner: macos-26-intel
     runs-on: ${{ matrix.runner }}
     steps:
       - id: valid_combo
