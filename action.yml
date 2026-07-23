@@ -115,7 +115,7 @@ inputs:
   cache-dir:
     description: "Directory to store anyvm cache"
     required: false
-    default: ~/Library/Caches/anyvm-in-ci
+    default: ${{ (runner.os == 'macOS') && '~/Library/Caches/anyvm-in-ci' || '/var/tmp/anyvm-in-ci' }}
   sync-time:
     description: "Synchronize the VM time with NTP (true/false)"
     type: boolean
@@ -197,7 +197,7 @@ runs:
         cpus=${cpus:-1}
         case "$cpus" in ''|*[!0-9]*) cpus=1 ;; esac
         echo "cpus=$cpus" >> "$GITHUB_OUTPUT"
-    - name: Cache
+    - name: Shared Tooling Cache
       if: ${{ inputs.disable-cache != true }}
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
@@ -211,8 +211,8 @@ runs:
         key: ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release || 'ANY' }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-${{ github.sha }}
         restore-keys: |
           ANYVM-IN-CI-${{ runner.os }}-guest-${{ inputs.osname }}-release-${{ inputs.release || 'ANY' }}-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ inputs.mem }}-
-    - name: Shared Host Cache
-      if: ${{ inputs.disable-cache != true }}
+    - name: Shared Host Cache (Homebrew)
+      if: ${{ (inputs.disable-cache != true) && ( runner.os == 'macOS' ) }}
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
@@ -226,7 +226,7 @@ runs:
         key: ANYVM-IN-CI-${{ runner.os }}-host-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-${{ github.sha }}
         restore-keys: |
           ANYVM-IN-CI-${{ runner.os }}-host-arch-${{ steps.detect_arch.outputs.guest_arch != '' && steps.detect_arch.outputs.guest_arch || inputs.arch }}-
-    - name: "Validate inputs and run anyvm"
+    - name: "Run in anyvm"
       id: anyvm-entrypoint
       shell: bash
       env:
