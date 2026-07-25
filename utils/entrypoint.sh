@@ -396,6 +396,39 @@ copy_workspace_with_scp() {
 	return "$_scp_status"
 }
 
+debug_log "=> Defining installer for anyvm.py tool"
+
+install_anyvm_tool() {
+	printf "::group::%s\n" "Setup-QEMU" ;
+	if command -v qemu-system-x86_64 >/dev/null 2>&1; then
+		printf '%s\n::endgroup::\n' "qemu present" ;
+		return
+	fi
+	case "$(uname -s)" in
+		Darwin)
+			if command -v brew >/dev/null 2>&1; then
+				# Best effort warning suppression about aws/tap
+				brew untap aws/tap >/dev/null 2>&1 || true ;  # unused and untrusted
+				if matches "$ANYVM_DISABLE_CACHE" "true" ; then export HOMEBREW_NO_ANALYTICS=1; fi ;
+				# TODO: set other homebrew vars when cache mode is enabled (and configure GHA cache for brew)
+				if [ "${DEBUG}" -eq 1 ]; then export HOMEBREW_VERBOSE=${DEBUG}; else export HOMEBREW_NO_ENV_HINTS=1; fi ;
+				export HOMEBREW_NO_INSECURE_REDIRECT=1;  # forbid redirects from secure HTTPS to insecure HTTP
+				brew trust --cask anyvm-org/tap/anyvm || true ;
+				HOMEBREW_GITHUB_API_TOKEN="${ANYVM_TOKEN:-${GH_TOKEN:-}}" brew install anyvm-org/tap/anyvm || error_close_and_die "failed to install anyvm via homebrew" ;
+				unset HOMEBREW_GITHUB_API_TOKEN ;
+				which anyvm.py || true ;
+				ln -sf $(which anyvm.py) "${ANYVM_PY_PATH}" || exit 3
+			else
+				download_file "$ANYVM_URL" "$ANYVM_PY_PATH" || error_close_and_die "failed to download anyvm.py"
+			fi
+			;;
+		*)
+			download_file "$ANYVM_URL" "$ANYVM_PY_PATH" || error_close_and_die "failed to download anyvm.py"
+			;;
+	esac
+	printf "::endgroup::\n" ;
+}
+
 debug_log "=> Defined" ;
 # MARK: Checks
 debug_log "Checking for Required tools" ;
@@ -455,7 +488,7 @@ fi
 
 if [ -n "${ANYVM_PY_IN_CACHE}" ] || [ "${ANYVM_PY_IN_CACHE}" -ne 1 ] ; then
 	debug_log "=> must download anyvm.py" &
-	download_file "$ANYVM_URL" "$ANYVM_PY_PATH" || error_close_and_die "failed to download anyvm.py"
+	install_anyvm_tool
 	debug_log "Downloaded anyvm.py"
 else
 	# leverage cache here
